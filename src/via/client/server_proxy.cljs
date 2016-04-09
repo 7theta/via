@@ -40,3 +40,10 @@
       :or {sente-endpoint default-sente-endpoint
            wire-format default-wire-format}}]
   (ServerProxy. sente-endpoint wire-format))
+
+(defn send!
+  "Asynchronously sends 'message' to the server encapsulated by
+  'server-proxy'. And optional 'timeout' (in ms) and/or 'callback-fn'
+  can be provided."
+  [server-proxy message & {:keys [timeout callback-fn]}]
+  ((:send-fn server-proxy) message timeout callback-fn))

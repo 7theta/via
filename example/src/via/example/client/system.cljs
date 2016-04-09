@@ -16,7 +16,8 @@
 
 ;;; Public
 
-(def system
+(defn system
+  []
   (component/system-map
    :server-proxy (server-proxy)
    :router (component/using (router msg-handler)

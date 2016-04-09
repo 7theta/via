@@ -17,6 +17,6 @@
 
 (defn start-system
   []
-  (component/start system))
+  (component/start (system)))
 
 (start-system)

@@ -9,7 +9,8 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.example.server.system
-  (:require [via.example.server.handlers :refer [msg-handler]]
+  (:require [via.example.server.broadcaster :refer [broadcaster]]
+            [via.example.server.handlers :refer [msg-handler]]
             [via.server
              [client-proxy :refer [client-proxy]]
              [router :refer [router]]]
@@ -23,4 +24,6 @@
   (component/system-map
    :client-proxy (client-proxy sente-web-server-adapter)
    :router (component/using (router msg-handler)
-                            [:client-proxy])))
+                            [:client-proxy])
+   :broadcaster (component/using (broadcaster 5)
+                                 [:client-proxy])))

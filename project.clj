@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.1.0"
+(defproject com.7theta/via "0.1.1"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"

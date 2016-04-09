@@ -12,7 +12,8 @@
   (:require [via.defaults :refer [default-sente-endpoint default-wire-format]]
             [taoensso.sente :refer [make-channel-socket-server!]]
             [taoensso.sente.packers.transit :refer [get-flexi-packer]]
-            [com.stuartsierra.component :as component]))
+            [com.stuartsierra.component :as component]
+            [taoensso.timbre :as log]))
 
 ;;; Types
 
@@ -41,3 +42,17 @@
   [sente-web-server-adapter & {:keys [wire-format]
                                :or {wire-format default-wire-format}}]
   (ClientProxy. sente-web-server-adapter wire-format))
+
+(defn send!
+  "Asynchronously sends 'message' to the clients connected for 'uid'
+  via the 'client-proxy'.
+
+  On slower connections, the messages may be batched for efficiency."
+  [client-proxy uid message]
+  ((:send-fn client-proxy) uid message))
+
+(defn broadcast!
+  "Asynchronously sends 'message' to all connected clients"
+  [client-proxy message]
+  (doseq [uid (:any @(:connected-uids client-proxy))]
+    (send! client-proxy uid message)))
