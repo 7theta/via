@@ -9,7 +9,7 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns ^:figwheel-always via.example.client.core
-  (:require [via.example.client.system :refer [system]]
+  (:require [via.example.client.system :as app]
             [com.stuartsierra.component :as component]
             [taoensso.timbre :as log]))
 
@@ -17,6 +17,6 @@
 
 (defn start-system
   []
-  (component/start (system)))
+  (component/start (app/system)))
 
-(defonce (start-system))
+(defonce system (start-system))
