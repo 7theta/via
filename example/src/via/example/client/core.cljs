@@ -15,8 +15,4 @@
 
 (enable-console-print!)
 
-(defn start-system
-  []
-  (component/start (app/system)))
-
-(defonce system (start-system))
+(defonce system (component/start (app/system)))
