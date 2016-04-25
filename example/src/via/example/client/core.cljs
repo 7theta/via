@@ -19,4 +19,4 @@
   []
   (component/start (system)))
 
-(start-system)
+(defonce (start-system))
