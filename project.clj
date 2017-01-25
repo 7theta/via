@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.2.1"
+(defproject com.7theta/via "0.2.2"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -16,24 +16,24 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/clojurescript "1.8.51"]
 
-                 [com.taoensso/sente "1.8.1"]
+                 [com.taoensso/sente "1.11.0"]
 
-                 [com.cognitect/transit-clj "0.8.285"]
-                 [com.cognitect/transit-cljs "0.8.237"]
+                 [com.cognitect/transit-clj "0.8.297"]
+                 [com.cognitect/transit-cljs "0.8.239"]
 
-                 [com.stuartsierra/component "0.3.1"]]
+                 [com.stuartsierra/component "0.3.2"]]
   :profiles {:dev {:plugins [[lein-cljsbuild "1.1.3"]
                              [lein-figwheel "0.5.2" :exclusions [cider/cider-nrepl
                                                                  org.clojure/clojure]]]
-                   :dependencies [[reloaded.repl "0.2.1"]
+                   :dependencies [[reloaded.repl "0.2.3"]
                                   [org.clojure/tools.namespace "0.2.11"]
-                                  [com.taoensso/timbre "4.3.1"]
+                                  [com.taoensso/timbre "4.8.0"]
 
-                                  [org.clojure/core.async "0.2.374"]
-                                  [ring "1.4.0"]
-                                  [ring/ring-defaults "0.2.0"]
+                                  [org.clojure/core.async "0.2.395"]
+                                  [ring "1.5.1"]
+                                  [ring/ring-defaults "0.2.2"]
 
-                                  [figwheel-sidecar "0.5.2"]
+                                  [figwheel-sidecar "0.5.8"]
                                   [com.cemerick/piggieback "0.2.1"]]
                    :source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]

@@ -11,7 +11,7 @@
 (ns via.server.client-proxy
   (:require [via.defaults :refer [default-sente-endpoint default-wire-format]]
             [taoensso.sente :refer [make-channel-socket-server!]]
-            [taoensso.sente.packers.transit :refer [get-flexi-packer]]
+            [taoensso.sente.packers.transit :refer [get-transit-packer]]
             [com.stuartsierra.component :as component]
             [taoensso.timbre :as log]))
 
@@ -23,7 +23,7 @@
     (if-not (:recv-ch component)
       (let [packer (case wire-format
                      :edn :edn
-                     :transit (get-flexi-packer :edn))
+                     :transit (get-transit-packer :json))
             {:keys [ch-recv send-fn ajax-post-fn ajax-get-or-ws-handshake-fn connected-uids]}
             (make-channel-socket-server! sente-web-server-adapter {:packer packer})]
         (assoc component

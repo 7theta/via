@@ -11,20 +11,24 @@
 (ns via.client.server-proxy
   (:require [via.defaults :refer [default-sente-endpoint default-wire-format]]
             [taoensso.sente :refer [make-channel-socket-client!]]
-            [taoensso.sente.packers.transit :refer [get-flexi-packer]]
+            [taoensso.sente.packers.transit :refer [get-transit-packer]]
             [com.stuartsierra.component :as component]))
 
 ;;; Types
 
-(defrecord ServerProxy [sente-endpoint wire-format]
+(defrecord ServerProxy [sente-endpoint wire-format opts]
   component/Lifecycle
   (start [component]
     (if-not (:recv-ch component)
       (let [packer (case wire-format
                      :edn :edn
-                     :transit (get-flexi-packer :edn))
+                     :transit (get-transit-packer :json))
             {:keys [ch-recv send-fn state]}
-            (make-channel-socket-client! sente-endpoint {:type :auto :packer packer})]
+            (make-channel-socket-client!
+             sente-endpoint
+             (merge {:packer packer}
+                    opts
+                    {:type :auto}))]
         (assoc component
                :recv-ch ch-recv
                :send-fn send-fn
@@ -38,8 +42,9 @@
 (defn server-proxy
   [& {:keys [sente-endpoint wire-format]
       :or {sente-endpoint default-sente-endpoint
-           wire-format default-wire-format}}]
-  (ServerProxy. sente-endpoint wire-format))
+           wire-format default-wire-format}
+      :as opts}]
+  (ServerProxy. sente-endpoint wire-format opts))
 
 (defn send!
   "Asynchronously sends 'message' to the server encapsulated by
