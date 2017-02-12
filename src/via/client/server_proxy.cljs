@@ -10,7 +10,7 @@
 
 (ns via.client.server-proxy
   (:require [via.defaults :refer [default-sente-endpoint default-wire-format]]
-            [taoensso.sente :refer [make-channel-socket-client!]]
+            [taoensso.sente :refer [make-channel-socket-client! cb-success?]]
             [taoensso.sente.packers.transit :refer [get-transit-packer]]
             [com.stuartsierra.component :as component]))
 
@@ -51,4 +51,10 @@
   'server-proxy'. And optional 'timeout' (in ms) and/or 'callback'
   can be provided."
   [server-proxy message & {:keys [timeout callback]}]
-  ((:send-fn server-proxy) message timeout callback))
+  (apply (:send-fn server-proxy) message (remove nil? [timeout callback])))
+
+(defn success?
+  "Returns a truthy value indicating if 'reply' was a success.
+  Useful for testing the reply in callbacks."
+  [reply]
+  (cb-success? reply))
