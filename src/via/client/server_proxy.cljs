@@ -48,9 +48,11 @@
 
 (defn send!
   "Asynchronously sends 'message' to the server encapsulated by
-  'server-proxy'. And optional 'timeout' (in ms) and/or 'callback'
-  can be provided."
-  [server-proxy message & {:keys [timeout callback]}]
+  'server-proxy'. An optional 'callback' can be provided if a
+  reply is expected from the server, however a 'timeout' must
+  also be provided with it."
+  [server-proxy message & {:keys [callback timeout]}]
+  {:pre [(if-not (nil? callback) (number? timeout) (nil? timeout))]}
   (apply (:send-fn server-proxy) message (remove nil? [timeout callback])))
 
 (defn success?

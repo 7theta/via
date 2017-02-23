@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.3.0"
+(defproject com.7theta/via "0.4.0"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -29,7 +29,7 @@
                                   [org.clojure/tools.namespace "0.2.11"]
                                   [com.taoensso/timbre "4.8.0"]
 
-                                  [org.clojure/core.async "0.2.395"]
+                                  [org.clojure/core.async "0.3.426"]
                                   [ring "1.5.1"]
                                   [ring/ring-defaults "0.2.3"]
 
