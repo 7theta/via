@@ -8,8 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.example.client.handlers
-  (:require [taoensso.timbre :as log]))
+(ns via.example.client.handlers)
 
 ;;; Public
 
@@ -18,18 +17,18 @@
 (defmethod msg-handler :chsk/state
   [{:as ev-msg :keys [?data]}]
   (if (= ?data {:first-open? true})
-    (log/debug "Channel socket successfully established!")
-    (log/debug "Channel socket state change: " ?data)))
+    (js/console.info "Channel socket successfully established!")
+    (js/console.info "Channel socket state change: " (pr-str ?data))))
 
 (defmethod msg-handler :chsk/recv
   [{:as ev-msg :keys [?data]}]
-  (log/debug "Push event from server: " ?data))
+  (js/console.info "Push event from server: " (pr-str ?data)))
 
 (defmethod msg-handler :chsk/handshake
   [{:as ev-msg :keys [?data]}]
   (let [[?uid ?csrf-token ?handshake-data] ?data]
-    (log/debug "Handshake: " ?data)))
+    (js/console.info "Handshake: " (pr-str ?data))))
 
 (defmethod msg-handler :default
   [{:as ev-msg :keys [event]}]
-  (log/warn "Unhandled event: " event))
+  (js/console.warn "Unhandled event: " (pr-str event)))

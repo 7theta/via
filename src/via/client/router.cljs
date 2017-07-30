@@ -10,24 +10,18 @@
 
 (ns via.client.router
   (:require [taoensso.sente :refer [start-client-chsk-router!]]
-            [com.stuartsierra.component :as component]))
-
-;;; Types
-
-(defrecord Router [server-proxy msg-handler]
-  component/Lifecycle
-  (start [component]
-    (if-not (:stop-fn component)
-      (assoc component
-             :stop-fn (start-client-chsk-router! (:recv-ch server-proxy)
-                                                 msg-handler))
-      component))
-  (stop [component]
-    (when-let [stop-fn (:stop-fn component)] (stop-fn))
-    (dissoc component :stop-fn)))
+            [integrant.core :as ig]))
 
 ;;; Public
 
+(declare router)
+
+(defmethod ig/init-key ::router [_ {:keys [server-proxy msg-handler] :as opts}]
+  (router server-proxy msg-handler))
+
+(defmethod ig/halt-key! ::router [_ router]
+  (when router (router)))
+
 (defn router
-  [msg-handler]
-  (Router. nil msg-handler))
+  [server-proxy msg-handler]
+  (start-client-chsk-router! (:recv-ch server-proxy) msg-handler))

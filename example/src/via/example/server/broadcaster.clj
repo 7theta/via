@@ -10,51 +10,35 @@
 
 (ns via.example.server.broadcaster
   (:require [via.server.client-proxy :refer [broadcast!]]
-            [com.stuartsierra.component :as component]
             [clojure.core.async :refer [chan close! alts! timeout go-loop]]
+            [integrant.core :as ig]
             [taoensso.timbre :as log]))
-
-(declare broadcast-loop)
-
-;;; Types
-
-(defrecord Broadcaster [client-proxy frequency]
-  component/Lifecycle
-  (start [component]
-    (if-not (:control-ch component)
-      (assoc component :control-ch (broadcast-loop client-proxy frequency))
-      component))
-  (stop [component]
-    (if-let [ch (:control-ch component)]
-      (do (close! ch)
-          (dissoc component :control-ch))
-      component)))
 
 ;;; Public
 
+(declare broadcaster)
+
+(defmethod ig/init-key ::broadcaster [_ {:keys [client-proxy frequency]}]
+  (broadcaster client-proxy frequency))
+
+(defmethod ig/halt-key! ::broadcaster [_ {:keys [control-ch]}]
+  (when control-ch
+    (close! control-ch)))
+
 (defn broadcaster
   "Instantiates a broadcaster that will send a message to all connected
-  clients ever 'frequency' seconds. 'frequency' defaults to 5 if not
-  specified."
-  ([] (broadcaster 5))
-  ([frequency]
-   (Broadcaster. nil frequency)))
-
-
-;;; Implementation
-
-(defn- broadcast-loop
-  "Sends a message to all connected clients every 'frequency' number
-  of seconds."
+  clients ever 'frequency' seconds"
   [client-proxy frequency]
   (let [ch (chan)]
     (go-loop [i 0]
       (let [[v p] (alts! [ch (timeout (* 1000 frequency))])]
-        (when-not (= p ch)
-          (broadcast! client-proxy
-                      [:via-example/server-broadcast
-                       {:message "A periodic broadcast"
-                        :frequency frequency
-                        :index i}])
-          (recur (inc i)))))
-    ch))
+        (if-not (= p ch)
+          (let [msg [:via-example/server-broadcast
+                     {:message "A periodic broadcast"
+                      :frequency frequency
+                      :index i}]]
+            (log/debug "Sending broadcast" (pr-str msg))
+            (broadcast! client-proxy msg)
+            (recur (inc i)))
+          (log/debug "Shutting down broadcast loop"))))
+    {:control-ch ch}))

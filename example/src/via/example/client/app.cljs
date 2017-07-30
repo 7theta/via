@@ -8,17 +8,18 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.example.client.system
+(ns via.example.client.app
   (:require [via.example.client.handlers :refer [msg-handler]]
-            [via.client.server-proxy :refer [server-proxy]]
-            [via.client.router :refer [router]]
-            [com.stuartsierra.component :as component]))
+            [via.client.server-proxy]
+            [via.client.router]
+            [integrant.core :as ig]))
 
 ;;; Public
 
-(defn system
-  []
-  (component/system-map
-   :server-proxy (server-proxy)
-   :router (component/using (router msg-handler)
-                            [:server-proxy])))
+(def config
+  {:via.client.server-proxy/server-proxy
+   nil
+
+   :via.client.router/router
+   {:msg-handler msg-handler
+    :server-proxy (ig/ref :via.client.server-proxy/server-proxy)}})

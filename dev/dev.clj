@@ -11,10 +11,9 @@
 (ns dev
   "Tools for interactive development with the REPL. This file should
   not be included in a production build of the application."
-  (:require [via.example.server.system :as ss]
+  (:require [via.example.server.app :as app]
             [via.example.server.web-handler :refer [sente-ring-handler]]
 
-            [reloaded.repl :refer [system init start stop go reset]]
             [clojure.tools.namespace.repl :refer [refresh refresh-all]]
 
             [clojure.pprint :refer [pprint]]
@@ -23,38 +22,36 @@
 
             [figwheel-sidecar.system :as fig]
 
-            [com.stuartsierra.component :as component]
-            [taoensso.timbre :as log]))
+            [integrant.core :as ig]
+            [com.stuartsierra.component :as component])) ; Figwheel dependency
 
-(defrecord FigwheelServer [client-proxy]
-  component/Lifecycle
-  (start [component]
-    (if-not (:figwheel component)
-      (assoc component
-             :figwheel (component/start
-                        (component/system-map
-                         :figwheel-system (-> (fig/fetch-config)
-                                              (assoc-in [:figwheel-options :ring-handler]
-                                                        (sente-ring-handler client-proxy))
-                                              fig/figwheel-system)
-                         :css-watcher (fig/css-watcher
-                                       {:watch-paths ["resources/public/css"]}))))
-      component))
-  (stop [component]
-    (if-let [figwheel (:figwheel component)]
-      (do (component/stop figwheel)
-          (dissoc component :figwheel))
-      component)))
+(def config (assoc app/config :figwheel {:client-proxy
+                                         (ig/ref :via.server.client-proxy/client-proxy)}))
 
-(defn figwheel-server
-  []
-  (FigwheelServer. nil))
+(defmethod ig/init-key :figwheel [_ {:keys [client-proxy]}]
+  (component/start
+   (component/system-map
+    :figwheel-system (-> (fig/fetch-config)
+                         (assoc-in [:data :figwheel-options :ring-handler]
+                                   (sente-ring-handler client-proxy))
+                         fig/figwheel-system)
+    :css-watcher (fig/css-watcher
+                  {:watch-paths ["resources/public/css"]}))))
 
-(reloaded.repl/set-init! #(assoc (ss/system nil)
-                                 :web-server (component/using (figwheel-server)
-                                                              [:client-proxy])))
+(defmethod ig/halt-key! :figwheel [_ figwheel-system]
+  (component/stop figwheel-system))
+
+(ig/load-namespaces config)
+
+(def app nil)
+
+(defn start []
+  (alter-var-root #'app (constantly (ig/init config))))
+
+(defn stop []
+  (alter-var-root #'app (constantly (ig/halt! app))))
 
 (defn cljs-repl
   "Initializes and starts the cljs REPL"
   []
-  (fig/cljs-repl (get-in system [:web-server :figwheel :figwheel-system])))
+  (fig/cljs-repl (get-in app [:web-server :figwheel :figwheel-system])))

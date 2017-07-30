@@ -9,42 +9,29 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.client.server-proxy
-  (:require [via.defaults :refer [default-sente-endpoint default-wire-format]]
+  (:require [via.defaults :refer [default-sente-endpoint]]
             [taoensso.sente :refer [make-channel-socket-client! cb-success?]]
             [taoensso.sente.packers.transit :refer [get-transit-packer]]
-            [com.stuartsierra.component :as component]))
-
-;;; Types
-
-(defrecord ServerProxy [sente-endpoint wire-format opts]
-  component/Lifecycle
-  (start [component]
-    (if-not (:recv-ch component)
-      (let [packer (case wire-format
-                     :edn :edn
-                     :transit (get-transit-packer :json))
-            {:keys [ch-recv send-fn state]}
-            (make-channel-socket-client!
-             sente-endpoint
-             (merge {:packer packer}
-                    opts
-                    {:type :auto}))]
-        (assoc component
-               :recv-ch ch-recv
-               :send-fn send-fn
-               :state state))
-      component))
-  (stop [component]
-    (apply dissoc component (keys component))))
+            [integrant.core :as ig]))
 
 ;;; Public
 
+(declare server-proxy)
+
+(defmethod ig/init-key ::server-proxy [_ opts]
+  (server-proxy opts))
+
 (defn server-proxy
-  [& {:keys [sente-endpoint wire-format]
-      :or {sente-endpoint default-sente-endpoint
-           wire-format default-wire-format}
-      :as opts}]
-  (ServerProxy. sente-endpoint wire-format opts))
+  [{:keys [sente-endpoint]
+    :or {sente-endpoint default-sente-endpoint}
+    :as opts}]
+  (let [packer (get-transit-packer :json)
+        {:keys [ch-recv send-fn state]}
+        (make-channel-socket-client! sente-endpoint
+                                     (merge {:type :auto :packer packer} opts))]
+    {:recv-ch ch-recv
+     :send-fn send-fn
+     :state state}))
 
 (defn send!
   "Asynchronously sends 'message' to the server encapsulated by

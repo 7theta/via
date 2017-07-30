@@ -9,10 +9,9 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns ^:figwheel-always via.example.client.core
-  (:require [via.example.client.system :as app]
-            [com.stuartsierra.component :as component]
-            [taoensso.timbre :as log]))
+  (:require [via.example.client.app :as app]
+            [integrant.core :as ig]))
 
 (enable-console-print!)
 
-(defonce system (component/start (app/system)))
+(defonce app (ig/init app/config))

@@ -11,5 +11,3 @@
 (ns via.defaults)
 
 (def default-sente-endpoint "/chsk")
-
-(def default-wire-format :transit)

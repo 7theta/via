@@ -8,41 +8,39 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.4.0"
+(defproject com.7theta/via "0.5.0"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.473"]
+                 [org.clojure/clojurescript "1.9.854"]
 
                  [com.taoensso/sente "1.11.0"]
 
-                 [com.cognitect/transit-clj "0.8.297"]
+                 [com.cognitect/transit-clj "0.8.300"]
                  [com.cognitect/transit-cljs "0.8.239"]
 
-                 [com.stuartsierra/component "0.3.2"]]
-  :profiles {:dev {:plugins [[lein-cljsbuild "1.1.5"]
-                             [lein-figwheel "0.5.9" :exclusions [cider/cider-nrepl
-                                                                 org.clojure/clojure]]]
-                   :dependencies [[reloaded.repl "0.2.3"]
-                                  [org.clojure/tools.namespace "0.2.11"]
-                                  [com.taoensso/timbre "4.8.0"]
+                 [integrant "0.5.0"]]
+  :profiles {:dev {:plugins [[lein-cljsbuild "1.1.7"]
+                             [lein-figwheel "0.5.11" :exclusions [cider/cider-nrepl
+                                                                  org.clojure/clojure]]]
+                   :dependencies [[org.clojure/tools.namespace "0.2.11"]
 
-                                  [org.clojure/core.async "0.3.426"]
-                                  [ring "1.5.1"]
-                                  [ring/ring-defaults "0.2.3"]
+                                  [org.clojure/core.async "0.3.443"]
+                                  [ring "1.6.2"]
+                                  [ring/ring-defaults "0.3.1"]
+                                  [compojure "1.6.0"]
 
-                                  [figwheel-sidecar "0.5.9"]
-                                  [com.cemerick/piggieback "0.2.1"]]
+                                  [figwheel-sidecar "0.5.11"]
+                                  [com.cemerick/piggieback "0.2.2"]]
                    :source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
                    :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}}}
   :cljsbuild {:builds [{:id "dev"
                         :source-paths ["src" "example/src"]
-                        :figwheel {:on-jsload "via.example.client.core/start-system"
-                                   :load-warninged-code true}
+                        :figwheel {:load-warninged-code true}
                         :compiler {:main via.example.client.core
                                    :output-to "example/resources/public/js/compiled/app.js"
                                    :output-dir "example/resources/public/js/compiled/out"
@@ -55,5 +53,6 @@
                                    :output-to "example/resources/public/js/compiled/app.js"
                                    :optimizations :advanced
                                    :pretty-print false}}]}
+  :prep-tasks [["cljsbuild" "once" "dev"] "compile"]
   :scm {:name "git"
         :url "https://github.com/7theta/via"})
