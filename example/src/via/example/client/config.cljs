@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.example.client.app
+(ns via.example.client.config
   (:require [via.example.client.handlers :refer [msg-handler]]
             [via.client.server-proxy]
             [via.client.router]

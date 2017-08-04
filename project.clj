@@ -8,15 +8,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.5.0"
+(defproject com.7theta/via "0.5.1"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.854"]
-
-                 [com.taoensso/sente "1.11.0"]
+  :dependencies [[com.taoensso/sente "1.11.0"]
 
                  [com.cognitect/transit-clj "0.8.300"]
                  [com.cognitect/transit-cljs "0.8.239"]
@@ -25,15 +22,19 @@
   :profiles {:dev {:plugins [[lein-cljsbuild "1.1.7"]
                              [lein-figwheel "0.5.11" :exclusions [cider/cider-nrepl
                                                                   org.clojure/clojure]]]
-                   :dependencies [[org.clojure/tools.namespace "0.2.11"]
-
+                   :dependencies [[org.clojure/clojure "1.8.0"]
+                                  [org.clojure/clojurescript "1.9.854"]
                                   [org.clojure/core.async "0.3.443"]
+
+                                  [org.clojure/tools.namespace "0.2.11"]
+
                                   [ring "1.6.2"]
                                   [ring/ring-defaults "0.3.1"]
                                   [compojure "1.6.0"]
 
                                   [figwheel-sidecar "0.5.11"]
-                                  [com.cemerick/piggieback "0.2.2"]]
+                                  [com.cemerick/piggieback "0.2.2"]
+                                  [integrant/repl "0.2.0"]]
                    :source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
@@ -53,6 +54,5 @@
                                    :output-to "example/resources/public/js/compiled/app.js"
                                    :optimizations :advanced
                                    :pretty-print false}}]}
-  :prep-tasks [["cljsbuild" "once" "dev"] "compile"]
   :scm {:name "git"
         :url "https://github.com/7theta/via"})

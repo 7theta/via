@@ -11,21 +11,24 @@
 (ns dev
   "Tools for interactive development with the REPL. This file should
   not be included in a production build of the application."
-  (:require [via.example.server.app :as app]
+  (:require [via.example.server.config :refer [config]]
             [via.example.server.web-handler :refer [sente-ring-handler]]
 
-            [clojure.tools.namespace.repl :refer [refresh refresh-all]]
+            [integrant.core :as ig]
+            [com.stuartsierra.component :as component] ; Figwheel dependency
 
-            [clojure.pprint :refer [pprint]]
-            [clojure.reflect :refer [reflect]]
-            [clojure.repl :refer [apropos dir doc find-doc pst source]]
+            [integrant.repl :refer [clear go halt init reset reset-all]]
+            [integrant.repl.state :refer [system]]
 
             [figwheel-sidecar.system :as fig]
 
-            [integrant.core :as ig]
-            [com.stuartsierra.component :as component])) ; Figwheel dependency
+            [clojure.tools.namespace.repl :refer [refresh refresh-all]]
+            [clojure.repl :refer [apropos dir doc find-doc pst source]]
+            [clojure.test :refer [run-tests run-all-tests]]
+            [clojure.pprint :refer [pprint]]
+            [clojure.reflect :refer [reflect]]))
 
-(def config (assoc app/config :figwheel {:client-proxy
+(def dev-config (assoc config :figwheel {:client-proxy
                                          (ig/ref :via.server.client-proxy/client-proxy)}))
 
 (defmethod ig/init-key :figwheel [_ {:keys [client-proxy]}]
@@ -41,17 +44,11 @@
 (defmethod ig/halt-key! :figwheel [_ figwheel-system]
   (component/stop figwheel-system))
 
-(ig/load-namespaces config)
+(ig/load-namespaces dev-config)
 
-(def app nil)
-
-(defn start []
-  (alter-var-root #'app (constantly (ig/init config))))
-
-(defn stop []
-  (alter-var-root #'app (constantly (ig/halt! app))))
+(integrant.repl/set-prep! (constantly dev-config))
 
 (defn cljs-repl
   "Initializes and starts the cljs REPL"
   []
-  (fig/cljs-repl (get-in app [:web-server :figwheel :figwheel-system])))
+  (fig/cljs-repl (get-in system [:figwheel :figwheel-system])))

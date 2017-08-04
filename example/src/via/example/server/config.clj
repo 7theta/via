@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.example.server.app
+(ns via.example.server.config
   (:require [via.example.server.handlers :refer [msg-handler]]
             [taoensso.sente.server-adapters.http-kit :refer [get-sch-adapter]]
             [integrant.core :as ig]))
