@@ -40,7 +40,9 @@
   also be provided with it."
   [server-proxy message & {:keys [callback timeout]}]
   {:pre [(if-not (nil? callback) (number? timeout) (nil? timeout))]}
-  (apply (:send-fn server-proxy) message (remove nil? [timeout callback])))
+  (if callback
+    ((:send-fn server-proxy) message timeout callback)
+    ((:send-fn server-proxy) message)))
 
 (defn success?
   "Returns a truthy value indicating if 'reply' was a success.
