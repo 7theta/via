@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.5.3"
+(defproject com.7theta/via "0.5.4"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -18,7 +18,8 @@
                  [com.cognitect/transit-clj "0.8.300"]
                  [com.cognitect/transit-cljs "0.8.239"]
 
-                 [integrant "0.6.0"]]
+                 [integrant "0.6.0"]
+                 [clojure-future-spec "1.9.0-alpha17"]]
   :profiles {:dev {:plugins [[lein-cljsbuild "1.1.7"]
                              [lein-figwheel "0.5.13" :exclusions [cider/cider-nrepl
                                                                   org.clojure/clojure]]]
