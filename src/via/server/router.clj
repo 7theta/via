@@ -19,7 +19,7 @@
 (defmethod ig/init-key ::router [_ {:keys [client-proxy msg-handler]}]
   (router client-proxy msg-handler))
 
-(defmethod ig/halt-key! ::router [_ {:keys [router]}]
+(defmethod ig/halt-key! ::router [_ router]
   (when router (router)))
 
 (defn router

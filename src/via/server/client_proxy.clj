@@ -9,8 +9,7 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.server.client-proxy
-  (:require [via.defaults :refer [default-sente-endpoint]]
-            [taoensso.sente :refer [make-channel-socket-server!]]
+  (:require [taoensso.sente :refer [make-channel-socket-server!]]
             [taoensso.sente.packers.transit :refer [get-transit-packer]]
             [integrant.core :as ig]))
 
