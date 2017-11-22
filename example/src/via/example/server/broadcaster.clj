@@ -18,10 +18,10 @@
 
 (declare broadcaster)
 
-(defmethod ig/init-key ::broadcaster [_ {:keys [client-proxy frequency]}]
+(defmethod ig/init-key :via.example.server/broadcaster [_ {:keys [client-proxy frequency]}]
   (broadcaster client-proxy frequency))
 
-(defmethod ig/halt-key! ::broadcaster [_ {:keys [control-ch]}]
+(defmethod ig/halt-key! :via.example.server/broadcaster [_ {:keys [control-ch]}]
   (when control-ch
     (close! control-ch)))
 

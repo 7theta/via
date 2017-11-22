@@ -29,7 +29,7 @@
             [clojure.reflect :refer [reflect]]))
 
 (def dev-config (assoc config :figwheel {:client-proxy
-                                         (ig/ref :via.server.client-proxy/client-proxy)}))
+                                         (ig/ref :via.server/client-proxy)}))
 
 (defmethod ig/init-key :figwheel [_ {:keys [client-proxy]}]
   (component/start

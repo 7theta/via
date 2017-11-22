@@ -16,10 +16,10 @@
 
 (declare router)
 
-(defmethod ig/init-key ::router [_ {:keys [server-proxy msg-handler] :as opts}]
+(defmethod ig/init-key :via.client/router [_ {:keys [server-proxy msg-handler] :as opts}]
   (router server-proxy msg-handler))
 
-(defmethod ig/halt-key! ::router [_ router]
+(defmethod ig/halt-key! :via.client/router [_ router]
   (when router (router)))
 
 (defn router

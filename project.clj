@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.5.5"
+(defproject com.7theta/via "0.6.0"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -16,24 +16,24 @@
   :dependencies [[com.taoensso/sente "1.11.0"]
 
                  [com.cognitect/transit-clj "0.8.300"]
-                 [com.cognitect/transit-cljs "0.8.239"]
+                 [com.cognitect/transit-cljs "0.8.243"]
 
                  [integrant "0.6.1"]
                  [clojure-future-spec "1.9.0-beta4"]]
   :profiles {:dev {:plugins [[lein-cljsbuild "1.1.7"]
-                             [lein-figwheel "0.5.13" :exclusions [cider/cider-nrepl
+                             [lein-figwheel "0.5.14" :exclusions [cider/cider-nrepl
                                                                   org.clojure/clojure]]]
                    :dependencies [[org.clojure/clojure "1.8.0"]
-                                  [org.clojure/clojurescript "1.9.908"]
-                                  [org.clojure/core.async "0.3.443"]
+                                  [org.clojure/clojurescript "1.9.946"]
+                                  [org.clojure/core.async "0.3.465"]
 
                                   [org.clojure/tools.namespace "0.2.11"]
 
-                                  [ring "1.6.2"]
+                                  [ring "1.6.3"]
                                   [ring/ring-defaults "0.3.1"]
                                   [compojure "1.6.0"]
 
-                                  [figwheel-sidecar "0.5.13"]
+                                  [figwheel-sidecar "0.5.14"]
                                   [com.cemerick/piggieback "0.2.2"]
                                   [integrant/repl "0.2.0"]]
                    :source-paths ["dev" "example/src"]

@@ -17,7 +17,7 @@
 
 (declare client-proxy)
 
-(defmethod ig/init-key ::client-proxy [_ {:keys [sente-web-server-adapter]}]
+(defmethod ig/init-key :via.server/client-proxy [_ {:keys [sente-web-server-adapter]}]
   (client-proxy sente-web-server-adapter))
 
 (defn client-proxy

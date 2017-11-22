@@ -15,13 +15,13 @@
 
 ;;; Public
 
-(def config {:via.server.client-proxy/client-proxy
+(def config {:via.server/client-proxy
              {:sente-web-server-adapter (get-sch-adapter)}
 
-             :via.server.router/router
+             :via.server/router
              {:msg-handler msg-handler
-              :client-proxy (ig/ref :via.server.client-proxy/client-proxy)}
+              :client-proxy (ig/ref :via.server/client-proxy)}
 
-             :via.example.server.broadcaster/broadcaster
+             :via.example.server/broadcaster
              {:frequency 5
-              :client-proxy (ig/ref :via.server.client-proxy/client-proxy)}})
+              :client-proxy (ig/ref :via.server/client-proxy)}})

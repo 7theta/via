@@ -18,7 +18,7 @@
 
 (declare server-proxy)
 
-(defmethod ig/init-key ::server-proxy [_ opts]
+(defmethod ig/init-key :via.client/server-proxy [_ opts]
   (server-proxy opts))
 
 (defn server-proxy
