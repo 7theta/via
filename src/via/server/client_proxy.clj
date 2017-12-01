@@ -17,14 +17,15 @@
 
 (declare client-proxy)
 
-(defmethod ig/init-key :via.server/client-proxy [_ {:keys [sente-web-server-adapter]}]
-  (client-proxy sente-web-server-adapter))
+(defmethod ig/init-key :via.server/client-proxy [_ {:keys [sente-web-server-adapter] :as opts}]
+  (client-proxy sente-web-server-adapter (dissoc opts sente-web-server-adapter)))
 
 (defn client-proxy
-  [sente-web-server-adapter]
+  [sente-web-server-adapter & [opts]]
   (let [packer (get-transit-packer :json)
         {:keys [ch-recv send-fn ajax-post-fn ajax-get-or-ws-handshake-fn connected-uids]}
-        (make-channel-socket-server! sente-web-server-adapter {:packer packer})]
+        (make-channel-socket-server! sente-web-server-adapter
+                                     (assoc opts :packer packer))]
     {:ring-ajax-post-fn ajax-post-fn
      :ring-ajax-get-or-ws-handshake-fn ajax-get-or-ws-handshake-fn
      :recv-ch ch-recv
