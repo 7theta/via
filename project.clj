@@ -8,12 +8,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.7.1"
+(defproject com.7theta/via "0.7.2"
   :description "A WebSocket abstraction"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[com.taoensso/sente "1.11.0"]
+  :dependencies [[com.taoensso/sente "1.12.0"]
 
                  [com.cognitect/transit-clj "0.8.300"]
                  [com.cognitect/transit-cljs "0.8.243"]
