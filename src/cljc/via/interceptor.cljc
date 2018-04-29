@@ -8,20 +8,21 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.server.router
-  (:require [taoensso.sente :refer [start-server-chsk-router!]]
-            [integrant.core :as ig]))
+(ns via.interceptor)
 
-;;; Public
+(defn ->interceptor
+  [& {:keys [id before after]
+      :or {before identity
+           after identity}}]
+  {:pre [(not (nil? id))]}
+  {:id id
+   :before before
+   :after after})
 
-(declare router)
-
-(defmethod ig/init-key :via.server/router [_ {:keys [client-proxy msg-handler]}]
-  (router client-proxy msg-handler))
-
-(defmethod ig/halt-key! :via.server/router [_ router]
-  (when router (router)))
-
-(defn router
-  [client-proxy msg-handler]
-  (start-server-chsk-router! (:recv-ch client-proxy) msg-handler))
+(defn handler
+  [id handler-fn]
+  (->interceptor
+   :id id
+   :before #(let [effects (handler-fn (:coeffects %) (:event %))]
+              (-> % (update :effects merge effects)
+                  (assoc :status 200)))))

@@ -8,17 +8,6 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.example.server.handlers
-  (:require [taoensso.timbre :as log]))
+(ns via.defaults)
 
-;;; Public
-
-(defmulti msg-handler :id)
-
-(defmethod msg-handler :default
-  [{:as ev-msg :keys [event id ?data ring-req ?reply-fn send-fn]}]
-  (let [session (:session ring-req)
-        uid     (:uid     session)]
-    (log/warn "Unhandled event:" event)
-    (when ?reply-fn
-      (?reply-fn {:via/unhandled-event-echoed-from-the-server event}))))
+(def default-via-endpoint "/via")

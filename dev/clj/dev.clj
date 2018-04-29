@@ -11,8 +11,7 @@
 (ns dev
   "Tools for interactive development with the REPL. This file should
   not be included in a production build of the application."
-  (:require [via.example.server.config :refer [config]]
-            [via.example.server.web-handler :refer [sente-ring-handler]]
+  (:require [example.config :refer [config]]
 
             [integrant.core :as ig]
             [com.stuartsierra.component :as component] ; Figwheel dependency
@@ -22,21 +21,22 @@
 
             [figwheel-sidecar.system :as fig]
 
-            [clojure.tools.namespace.repl :refer [refresh refresh-all]]
+            [clojure.tools.namespace.repl :refer [refresh refresh-all disable-reload!]]
             [clojure.repl :refer [apropos dir doc find-doc pst source]]
             [clojure.test :refer [run-tests run-all-tests]]
             [clojure.pprint :refer [pprint]]
             [clojure.reflect :refer [reflect]]))
 
-(def dev-config (assoc config :figwheel {:client-proxy
-                                         (ig/ref :via.server/client-proxy)}))
+(disable-reload! (find-ns 'integrant.core))
 
-(defmethod ig/init-key :figwheel [_ {:keys [client-proxy]}]
+(def dev-config (assoc config :figwheel {:ring-handler
+                                         (ig/ref :example/ring-handler)}))
+
+(defmethod ig/init-key :figwheel [_ {:keys [ring-handler]}]
   (component/start
    (component/system-map
     :figwheel-system (-> (fig/fetch-config)
-                         (assoc-in [:data :figwheel-options :ring-handler]
-                                   (sente-ring-handler client-proxy))
+                         (assoc-in [:data :figwheel-options :ring-handler] ring-handler)
                          fig/figwheel-system)
     :css-watcher (fig/css-watcher
                   {:watch-paths ["resources/public/css"]}))))
