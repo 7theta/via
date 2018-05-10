@@ -1,5 +1,6 @@
 (ns example.config
   (:require [example.events]
+            [example.subs]
             [integrant.core :as ig]))
 
 ;;; Public
@@ -13,6 +14,10 @@
 
    :via/events
    {:endpoint (ig/ref :via/endpoint)}
+
+   :via/subs
+   {:endpoint (ig/ref :via/endpoint)
+    :events (ig/ref :via/events)}
 
    :example/user-store
    nil

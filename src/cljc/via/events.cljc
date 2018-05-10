@@ -28,7 +28,7 @@
 
 (defmethod ig/halt-key! :via/events
   [_ {:keys [endpoint sub-key]}]
-  (reset! handlers {}))
+  (unsubscribe endpoint sub-key))
 
 (defn reg-event-via
   ([id handler]
@@ -37,7 +37,8 @@
    (swap! handlers assoc id {:queue (-> [#'endpoint/interceptor]
                                         (concat interceptors)
                                         (concat [(interceptor/handler id handler)]))
-                             :stack []})))
+                             :stack []})
+   id))
 
 ;;; Implementation
 

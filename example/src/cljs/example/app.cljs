@@ -6,4 +6,5 @@
 
 (defn reset-app!
   []
+  (ig/halt! app)
   (set! app (ig/init config)))

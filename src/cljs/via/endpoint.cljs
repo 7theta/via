@@ -141,9 +141,9 @@
          :timeout-fn #(do (handle-event (endpoint) :auth-close {:status :timeout}) (timeout-fn))))
 
 (defn- handle-event
-  [endpoint message-type message]
-  (doseq [handler (->> @(:subscriptions endpoint) vals (map message-type) (remove nil?))]
-    (handler message)))
+  [endpoint type data]
+  (doseq [handler (->> @(:subscriptions endpoint) vals (map type) (remove nil?))]
+    (handler data)))
 
 (defn- handle-reply
   [endpoint reply]

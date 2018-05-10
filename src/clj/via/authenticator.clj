@@ -59,7 +59,9 @@
 (defn validate-token
   "Validates the `token` using `authenticator`"
   [{:keys [secret] :as authenticator} token]
-  (when token (jwt/decrypt token secret)))
+  (try
+    (when token (jwt/decrypt token secret))
+    (catch Exception _ nil)))
 
 (defn hash-password
   "Hashes `password` using the default algorithm (currently :bcrypt+sha512)"

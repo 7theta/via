@@ -15,6 +15,7 @@
                                         sec-websocket-accept] :as http]
             [cognitect.transit :as transit]
             [utilis.fn :refer [fsafe]]
+            [utilis.logic :refer [xor]]
             [integrant.core :as ig])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
@@ -33,7 +34,9 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects merge {:endpoint (fn [] endpoint) :request (:request %)})
+       :before #(update % :coeffects merge {:endpoint (fn [] endpoint)
+                                            :request (:request %)
+                                            :client-id (:client-id %)})
        :after (fn [context]
                 (when-let [response (get-in context [:effects :reply])]
                   (when (:request-id context)
@@ -104,18 +107,32 @@
 
 (defn send!
   "Asynchronously sends `event` to the client for `client-id`"
-  [endpoint message & {:keys [type client-id id params]
+  [endpoint message & {:keys [type client-id user-id params]
                        :or {type :message}}]
-  {:pre [(or client-id id)]}
-  (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
-    (http/send! channel (encode (merge {:type type :payload message} params)) false)
-    (throw (ex-info "Client not connected" {:client-id client-id}))))
+  {:pre [(xor client-id user-id)]}
+  (if user-id
+    (doseq [channel (->> @(:clients (endpoint)) vals (filter #(= user-id (-> % :user :id)))
+                         (map :channel) (remove nil?))]
+      (http/send! channel (encode (merge {:type type :payload message} params)) false))
+    (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
+      (http/send! channel (encode (merge {:type type :payload message} params)) false)
+      (throw (ex-info "Client not connected" {:client-id client-id})))))
 
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
   [endpoint message]
   (doseq [c (keys @(:clients (endpoint)))]
     (send! endpoint message :client-id c)))
+
+(defn disconnect!
+  [endpoint & {:keys [client-id user-id]}]
+  {:pre [(xor client-id user-id)]}
+  (if user-id
+    (doseq [channel (->> @(:clients (endpoint)) vals (filter #(= user-id (-> % :user :id)))
+                         (map :channel) (remove nil?))]
+      (http/close channel))
+    (when-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
+      (http/close channel))))
 
 (defn- encode
   [data]

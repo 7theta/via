@@ -11,5 +11,8 @@
       [:div {:style {:margin-top "20px"}}
        "Count: " @(subscribe [:example/count])
        [:button {:on-click #(dispatch [:example/increment-count])
-                 :style {:margin-left "12px"}} [:font {:size "+1"} "+"]]]]
+                 :style {:margin-left "12px"}} [:font {:size "+1"} "+"]]]
+      [:br]
+      [:div {:style {:margin-top "20px"}}
+       "Auto Increment Count: " @(subscribe [:api.example/auto-increment-count])]]
      [:button {:on-click #(dispatch [:example/login])} [:font {:size "+1"} "Login"]])])
