@@ -34,9 +34,11 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects merge {:endpoint (fn [] endpoint)
-                                            :request (:request %)
-                                            :client-id (:client-id %)})
+       :before #(update % :coeffects merge
+                        {:endpoint (fn [] endpoint)
+                         :request (dissoc (:request %) :ring-request)
+                         :ring-request (:ring-request (:request %))
+                         :client-id (:client-id %)})
        :after (fn [context]
                 (when-let [response (get-in context [:effects :reply])]
                   (when (:request-id context)
@@ -55,7 +57,7 @@
          (with-channel request channel
            (let [client-id (str (java.util.UUID/randomUUID))]
              (handle-event :open {:client-id client-id :status :initial})
-             (swap! clients assoc client-id {:channel channel})
+             (swap! clients assoc client-id {:channel channel :ring-request request})
              (on-close channel
                        (fn [status]
                          (swap! clients dissoc client-id)
@@ -66,7 +68,11 @@
                            (let [message (decode message)]
                              (case (:type message)
                                :message
-                               (handle-event :message (merge message {:client-id client-id}))
+                               (handle-event
+                                :message
+                                (merge message
+                                       {:client-id client-id
+                                        :ring-request request}))
                                :authentication-request
                                (if-not authenticator
                                  (do
