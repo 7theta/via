@@ -31,23 +31,23 @@
                  (doseq [s removed] (unsubscribe endpoint s))
                  (doseq [s added] (subscribe endpoint s)))))
   {:endpoint endpoint
-   :events events
-   :sub-key (via/subscribe endpoint {:close #(doseq [s @subscriptions]
-                                               (unsubscribe endpoint s))})})
+   :events events})
 
 (defmethod ig/halt-key! :via/subs
-  [_ {:keys [endpoint sub-key]}]
-  (via/unsubscribe endpoint sub-key))
+  [_ {:keys [endpoint]}])
 
 (defn reg-sub-via
   [id sub-fn]
-  (reg-sub-raw
-   id
-   (fn [db sub-v]
-     (swap! subscriptions conj sub-v)
-     (make-reaction
-      #(sub-fn (get-in @db (path sub-v)))
-      :on-dispose #(swap! subscriptions disj sub-v)))))
+  (let [has-disposed? (atom false)]
+    (reg-sub-raw
+     id
+     (fn [db sub-v]
+       (swap! subscriptions conj sub-v)
+       (make-reaction
+        #(sub-fn (get-in @db (path sub-v)))
+        :on-dispose #(when-not @has-disposed?
+                       (reset! has-disposed? true)
+                       (swap! subscriptions disj sub-v)))))))
 
 (reg-event-via
  :via.subs.db/updated

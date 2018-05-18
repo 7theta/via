@@ -9,7 +9,8 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.subs
-  (:require [via.events :refer [reg-event-via]]
+  (:require [via.interceptor :as interceptor]
+            [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
             [integrant.core :as ig]))
 
@@ -32,14 +33,35 @@
     (unsubscribe endpoint client-id sub-v)))
 
 (defn reg-sub-via
-  [id sub-fn dispose-fn]
-  (swap! handlers assoc id {:sub-fn sub-fn
-                            :dispose-fn dispose-fn}))
+  ([id sub-fn dispose-fn]
+   (reg-sub-via id nil sub-fn dispose-fn))
+  ([id interceptors sub-fn dispose-fn]
+   (swap! handlers assoc id
+          {:dispose-fn dispose-fn
+           :queue (-> [#'via/interceptor]
+                      (concat interceptors)
+                      (concat [(interceptor/handler
+                                id (fn [coeffects _]
+                                     (let [{:keys [endpoint client-id sub-v callback]} coeffects
+                                           coeffects (dissoc coeffects :sub-v :callback)]
+                                       {::context
+                                        (sub-fn (merge
+                                                 coeffects
+                                                 {:callback #(try
+                                                               (via/send! endpoint (conj (vec callback)
+                                                                                         {:sub-v sub-v :value %})
+                                                                          :client-id client-id)
+                                                               true
+                                                               (catch Exception _
+                                                                 (unsubscribe endpoint client-id)
+                                                                 false))})
+                                                sub-v)})))]))
+           :stack []})))
 
 (reg-event-via
  :via.subs/subscribe
- (fn [{:keys [endpoint client-id]} [_ {:keys [sub-v callback]}]]
-   {:reply (if (subscribe endpoint client-id sub-v callback)
+ (fn [context [_ {:keys [sub-v callback]}]]
+   {:reply (if (subscribe context sub-v callback)
              {:status :success}
              {:status :error
               :error :invalid-subscription
@@ -55,18 +77,19 @@
               :sub-v sub-v})}))
 
 (defn subscribe
-  [endpoint client-id sub-v callback]
-  (when-let [{:keys [sub-fn]} (get @handlers (first sub-v))]
-    (let [context (sub-fn sub-v #(try
-                                   (via/send! endpoint (conj (vec callback)
-                                                             {:sub-v sub-v :value %})
-                                              :client-id client-id)
-                                   true
-                                   (catch Exception _
-                                     (unsubscribe endpoint client-id)
-                                     false)))]
-      (swap! subscriptions assoc [sub-v client-id] context)
-      true)))
+  [{:keys [endpoint ring-request request client-id] :as event-context} sub-v callback]
+  (when-let [{:keys [sub-fn] :as sub-context} (get @handlers (first sub-v))]
+    (let [result (-> (merge {:endpoint endpoint
+                             :request (assoc request :ring-request ring-request)
+                             :client-id client-id
+                             :coeffects {:sub-v sub-v
+                                         :callback callback}}
+                            sub-context)
+                     interceptor/run)]
+      (boolean
+       (when-let [result-context (-> result :effects ::context)]
+         (swap! subscriptions assoc [sub-v client-id] result-context)
+         true)))))
 
 (defn unsubscribe
   ([endpoint client-id]

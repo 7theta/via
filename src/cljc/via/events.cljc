@@ -43,28 +43,10 @@
 ;;; Implementation
 
 (defn- handle-request
-  [endpoint {:keys [token payload request-id] :as request}]
+  [endpoint {:keys [payload request-id] :as request}]
   (when-let [context (get @handlers (first payload))]
-    (let [move-interceptor (fn [context direction]
-                             (if (= direction :forward)
-                               (let [interceptor (first (:queue context))]
-                                 (-> context (update :queue rest) (update :stack (partial cons interceptor))))
-                               (let [interceptor (first (:stack context))]
-                                 (-> context (update :queue (partial cons interceptor)) (update :stack rest)))))
-          run-interceptor (fn [context interceptor direction]
-                            (((if (= direction :forward) :before :after) interceptor) context))
-          run-interceptors (fn [context direction]
-                             (loop [context context]
-                               (if-let [interceptor (first (get context (if (= direction :forward) :queue :stack)))]
-                                 (recur (-> context
-                                            (move-interceptor direction)
-                                            (run-interceptor (cond-> interceptor (var? interceptor) deref) direction)))
-                                 context)))]
-      (-> context
-          (merge {:event payload
-                  :request request
-                  :token token}
-                 (select-keys request [:client-id :request-id]))
-          (cond-> (:clients (endpoint)) (assoc :user (get-in @(:clients (endpoint)) [(:client-id request) :user])))
-          (run-interceptors :forward)
-          (run-interceptors :reverse)))))
+    (-> context
+        (merge {:event payload
+                :request request}
+               (select-keys request [:client-id :request-id]))
+        interceptor/run)))

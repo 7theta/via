@@ -10,13 +10,14 @@
 
 (ns via.authenticator
   (:require [via.interceptor :refer [->interceptor]]
+            [via.events :refer [reg-event-via]]
             [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
             [clj-time.core :as t]
             [integrant.core :as ig]))
 
-(declare validate-token)
+(declare validate-token authenticate)
 
 (def interceptor nil)
 
@@ -34,12 +35,22 @@
       (->interceptor
        :id :via.authenticator/interceptor
        :before (fn [context]
-                 (let [token (:token context)]
+                 (let [token (get-in context [:coeffects :client :data :token])]
                    (if (validate-token authenticator token)
                      context
-                     (assoc context :status 403
+                     (assoc context
+                            :status 403
                             :queue []   ; Stop any further execution
                             :effects {:reply {:error :invalid-token :token token}})))))))
+    (reg-event-via
+     :via/id-password-login
+     (fn [context [_ {:keys [id password]}]]
+       (if-let [user (authenticate authenticator id password)]
+         {:client/replace-data {:token (:token user)}
+          :client/reply user
+          :status 200}
+         {:client/reply {:error :invalid-credentials}
+          :status 403})))
     authenticator))
 
 (defn authenticate

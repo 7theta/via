@@ -9,25 +9,30 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
+  (:require-macros [cljs.core.async.macros :refer [go alt!]])
   (:require [via.interceptor :refer [->interceptor]]
             [via.defaults :refer [default-via-endpoint]]
             [haslett.client :as ws]
             [haslett.format :as fmt]
             [utilis.fn :refer [fsafe]]
-            [cljs.core.async :as a :refer [go chan close! alt! <! >!]]
-            [integrant.core :as ig]))
+            [utilis.types.string :refer [->string]]
+            [cljs.core.async :as a :refer [chan close! <! >!]]
+            [integrant.core :as ig]
+            [goog.string :refer [format]]
+            [goog.string.format]
+            [clojure.string :as st]))
 
 (declare connect! disconnect! send! default-via-url)
 
 (def interceptor)
 
 (defmethod ig/init-key :via/endpoint
-  [_ {:keys [url auto-connect]
+  [_ {:keys [url auto-connect connect-opts]
       :or {auto-connect true
-           url (default-via-url)}}]
+           url (default-via-url)}
+      :as opts}]
   (let [endpoint {:url url
                   :stream (atom nil)
-                  :token (atom nil)
                   :subscriptions (atom {})
                   :control-ch (atom nil)
                   :requests (atom {})}]
@@ -37,7 +42,7 @@
       :id :via.endpoint/interceptor
       :before #(update % :coeffects merge {:endpoint endpoint :request (:request %)})
       :after (fn [context]
-               (when-let [response (get-in context [:effects :reply])]
+               (when-let [response (get-in context [:effects :client/reply])]
                  (when (:request-id context)
                    (send! (fn [] endpoint) response
                           :type :reply
@@ -45,38 +50,43 @@
                           :params {:status (:status context)
                                    :request-id (:request-id context)})))
                context)))
-    (when auto-connect (connect! (fn [] endpoint)))
+    (when auto-connect (connect! (fn [] endpoint) connect-opts))
     (fn [] endpoint)))
 
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
   (disconnect! endpoint))
 
-(declare handle-event handle-reply)
+(declare handle-event handle-reply append-query-params)
 
 (defn connect!
-  [endpoint]
-  (let [endpoint (endpoint)]
-    (when-not @(:stream endpoint)
-      (let [stream (ws/connect (:url endpoint) {:format fmt/transit})
-            control-ch (chan)]
-        (go
-          (let [stream (<! stream)]
-            (handle-event endpoint :open {:status :initial})
-            (loop []
-              (alt!
-                control-ch (ws/close stream)
-                (:source stream) ([message]
-                                  (if (nil? message)
-                                    (handle-event endpoint :close {:status :server-closed})
-                                    (do
-                                      (case (:type message)
-                                        :message (handle-event endpoint :message message)
-                                        :reply (handle-reply endpoint message))
-                                      (recur))))))))
-        (reset! (:stream endpoint) stream)
-        (when-let [old-control-ch @(:control-ch endpoint)] (close! old-control-ch))
-        (reset! (:control-ch endpoint) control-ch)))))
+  ([endpoint] (connect! endpoint nil))
+  ([endpoint {:keys [params]}]
+   (let [endpoint (endpoint)]
+     (when-not @(:stream endpoint)
+       (let [stream (ws/connect
+                     (append-query-params
+                      (:url endpoint)
+                      params)
+                     {:format fmt/transit})
+             control-ch (chan)]
+         (go
+           (let [stream (<! stream)]
+             (handle-event endpoint :open {:status :initial})
+             (loop []
+               (alt!
+                 control-ch (ws/close stream)
+                 (:source stream) ([message]
+                                   (if (nil? message)
+                                     (handle-event endpoint :close {:status :server-closed})
+                                     (do
+                                       (case (:type message)
+                                         :message (handle-event endpoint :message message)
+                                         :reply (handle-reply endpoint message))
+                                       (recur))))))))
+         (reset! (:stream endpoint) stream)
+         (when-let [old-control-ch @(:control-ch endpoint)] (close! old-control-ch))
+         (reset! (:control-ch endpoint) control-ch))))))
 
 (defn disconnect!
   [endpoint]
@@ -110,7 +120,6 @@
                   (if-let [stream @(:stream endpoint)]
                     (go (>! (:sink (<! stream))
                             (merge {:type type
-                                    :token @(:token endpoint)
                                     :payload message} params)))
                     (throw (js/Error. ":via.client/endpoint - not connected"))))]
     (if-not success-fn
@@ -123,22 +132,6 @@
                                  :timer (js/setTimeout (fsafe timeout-fn) timeout)})
         (do-send message {:request-id request-id
                           :timeout timeout})))))
-
-(defn authenticate!
-  [endpoint {:keys [id password]} & {:keys [success-fn failure-fn timeout timeout-fn]}]
-  (send! endpoint {:id id :password password}
-         :type :authentication-request
-         :success-fn (fn [{:keys [payload] :as reply}]
-                       (reset! (:token (endpoint)) (:token payload))
-                       (handle-event (endpoint) :auth-open {:status :ok
-                                                            :user payload})
-                       (success-fn payload))
-         :failure-fn (fn [{:keys [payload] :as reply}]
-                       (reset! (:token (endpoint)) nil)
-                       (handle-event (endpoint) :auth-close payload)
-                       (failure-fn (:error payload)))
-         :timeout timeout
-         :timeout-fn #(do (handle-event (endpoint) :auth-close {:status :timeout}) (timeout-fn))))
 
 (defn- handle-event
   [endpoint type data]
@@ -156,3 +149,15 @@
   []
   (when-let [location (.-location js/window)]
     (str "ws://" (.-host location) default-via-endpoint)))
+
+(defn- append-query-params
+  [url query-params]
+  (->> query-params
+       (map (fn [[k v]]
+              (format "%s=%s"
+                      (->string k)
+                      (->string v))))
+       (st/join "&") vector
+       (filter seq)
+       (cons url)
+       (st/join "?")))
