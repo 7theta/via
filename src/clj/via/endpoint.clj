@@ -35,13 +35,11 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(let [request (:request %)
-                      client-id (:client-id %)]
-                  (update % :coeffects merge
-                          {:endpoint (fn [] endpoint)
-                           :request (dissoc request :ring-request)
-                           :ring-request (:ring-request request)
-                           :client-id client-id}))
+       :before #(update % :coeffects merge
+                        {:endpoint (fn [] endpoint)
+                         :request (dissoc (:request %) :ring-request)
+                         :ring-request (:ring-request (:request %))
+                         :client-id (:client-id %)})
        :after (fn [context]
 
                 (if-let [{:keys [client-id tag]} (get-in context [:effects :disconnect])]
@@ -61,12 +59,12 @@
 
                     (let [add-tags (get-in context [:effects :add-tags])
                           remove-tags (get-in context [:effects :remove-tags])
-                          tags (get-in context [:effects :tags])]
-                      (when (or (seq add-tags) (seq remove-tags) (seq tags))
+                          replace-tags (get-in context [:effects :replace-tags])]
+                      (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
                         (when-let [client-id (:client-id context)]
-                          (swap! clients update-in [client-id :tags]
-                                 #(if (seq tags)
-                                    (set tags)
+                          (swap! clients update-in [client-id :replace-tags]
+                                 #(if (seq replace-tags)
+                                    (set replace-tags)
                                     (cond-> (set %)
                                       add-tags (union (set add-tags))
                                       remove-tags (difference (set remove-tags))))))))))
@@ -89,13 +87,11 @@
                          (handle-event :close {:client-id client-id :status status})))
              (on-receive channel
                          (fn [message]
-                           (let [message (decode message)]
-                             (case (:type message)
-                               :message (handle-event
-                                         :message
-                                         (merge message
-                                                {:client-id client-id
-                                                 :ring-request request})))))))))))))
+                           (handle-event
+                            :message
+                            (merge (decode message)
+                                   {:client-id client-id
+                                    :ring-request request})))))))))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -132,7 +128,7 @@
   [endpoint & {:keys [client-id tag]}]
   {:pre [(xor client-id tag)]}
   (doseq [channel (if tag
-                    (channels-by-tag endpoint)
+                    (channels-by-tag endpoint tag)
                     [(get-in @(:clients (endpoint))
                              [client-id :channel])])]
     (http/close channel)))
