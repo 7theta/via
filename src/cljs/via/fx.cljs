@@ -60,14 +60,4 @@
                       :timeout-fn (if on-timeout
                                     #(dispatch (conj (vec on-timeout) (:payload %)))
                                     #(js/console.error ":via/dispatch timeout" event)))
-           (via/send! endpoint event)))))
-    (reg-fx
-     :via/authenticate
-     (fn [{:keys [timeout on-success on-failure on-timeout] :as request}]
-       (via/authenticate! endpoint (select-keys request [:id :password])
-                          :timeout (or timeout default-timeout)
-                          :success-fn #(dispatch (conj (vec on-success) %))
-                          :failure-fn #(dispatch (conj (vec on-failure) %))
-                          :timeout-fn (if on-timeout
-                                        #(dispatch (conj (vec on-timeout) %))
-                                        #(js/console.error ":via/authenticate timeout" (:id request))))))))
+           (via/send! endpoint event)))))))

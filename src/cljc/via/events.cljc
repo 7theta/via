@@ -43,12 +43,10 @@
 ;;; Implementation
 
 (defn- handle-request
-  [endpoint {:keys [token payload request-id] :as request}]
+  [endpoint {:keys [payload request-id] :as request}]
   (when-let [context (get @handlers (first payload))]
     (-> context
         (merge {:event payload
-                :request request
-                :token token}
+                :request request}
                (select-keys request [:client-id :request-id]))
-        (cond-> (:clients (endpoint)) (assoc :user (get-in @(:clients (endpoint)) [(:client-id request) :user])))
         interceptor/run)))
