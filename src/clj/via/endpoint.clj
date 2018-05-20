@@ -16,10 +16,11 @@
             [cognitect.transit :as transit]
             [utilis.fn :refer [fsafe]]
             [utilis.logic :refer [xor]]
+            [clojure.set :refer [union difference]]
             [integrant.core :as ig])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
-(declare encode decode send!)
+(declare encode decode send! channels-by-tag disconnect!)
 
 (def interceptor)
 
@@ -34,19 +35,42 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects merge
-                        {:endpoint (fn [] endpoint)
-                         :request (dissoc (:request %) :ring-request)
-                         :ring-request (:ring-request (:request %))
-                         :client-id (:client-id %)})
+       :before #(let [request (:request %)
+                      client-id (:client-id %)]
+                  (update % :coeffects merge
+                          {:endpoint (fn [] endpoint)
+                           :request (dissoc request :ring-request)
+                           :ring-request (:ring-request request)
+                           :client-id client-id}))
        :after (fn [context]
-                (when-let [response (get-in context [:effects :reply])]
-                  (when (:request-id context)
-                    (send! (fn [] endpoint) response
-                           :type :reply
-                           :client-id (:client-id context)
-                           :params {:status (:status context)
-                                    :request-id (:request-id context)})))
+
+                (if-let [{:keys [client-id tag]} (get-in context [:effects :disconnect])]
+                  (disconnect!
+                   (fn [] endpoint)
+                   :client-id client-id
+                   :tag tag)
+                  (do
+
+                    (when-let [response (get-in context [:effects :reply])]
+                      (when (:request-id context)
+                        (send! (fn [] endpoint) response
+                               :type :reply
+                               :client-id (:client-id context)
+                               :params {:status (:status context)
+                                        :request-id (:request-id context)})))
+
+                    (let [add-tags (get-in context [:effects :add-tags])
+                          remove-tags (get-in context [:effects :remove-tags])
+                          tags (get-in context [:effects :tags])]
+                      (when (or (seq add-tags) (seq remove-tags) (seq tags))
+                        (when-let [client-id (:client-id context)]
+                          (swap! clients update-in [client-id :tags]
+                                 #(if (seq tags)
+                                    (set tags)
+                                    (cond-> (set %)
+                                      add-tags (union (set add-tags))
+                                      remove-tags (difference (set remove-tags))))))))))
+
                 context))))
     (fn
       ([] endpoint)
@@ -67,38 +91,11 @@
                          (fn [message]
                            (let [message (decode message)]
                              (case (:type message)
-                               :message
-                               (handle-event
-                                :message
-                                (merge message
-                                       {:client-id client-id
-                                        :ring-request request}))
-                               :authentication-request
-                               (if-not authenticator
-                                 (do
-                                   (http/send! channel (encode
-                                                        {:type :reply
-                                                         :request-id (:request-id message)
-                                                         :status 500}) false)
-                                   (throw (ex-info "Authenticator not configured")))
-                                 (http/send!
-                                  channel
-                                  (encode
-                                   (let [{:keys [id password]} (:payload message)]
-                                     (if-let [user (authenticate authenticator id password)]
-                                       (do
-                                         (swap! clients update client-id assoc :user user)
-                                         (handle-event :auth-open {:client-id client-id :user user})
-                                         {:type :reply
-                                          :request-id (:request-id message)
-                                          :status 200
-                                          :payload user})
-                                       (do (handle-event :auth-close {:client-id client-id})
-                                           {:type :reply
-                                            :request-id (:request-id message)
-                                            :status 403
-                                            :payload {:error :invalid-credential}}))))
-                                  false)))))))))))))
+                               :message (handle-event
+                                         :message
+                                         (merge message
+                                                {:client-id client-id
+                                                 :ring-request request})))))))))))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -113,16 +110,17 @@
 
 (defn send!
   "Asynchronously sends `event` to the client for `client-id`"
-  [endpoint message & {:keys [type client-id user-id params]
+  [endpoint message & {:keys [type client-id tag params]
                        :or {type :message}}]
-  {:pre [(xor client-id user-id)]}
-  (if user-id
-    (doseq [channel (->> @(:clients (endpoint)) vals (filter #(= user-id (-> % :user :id)))
-                         (map :channel) (remove nil?))]
-      (http/send! channel (encode (merge {:type type :payload message} params)) false))
-    (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
-      (http/send! channel (encode (merge {:type type :payload message} params)) false)
-      (throw (ex-info "Client not connected" {:client-id client-id})))))
+  {:pre [(xor client-id tag)]}
+  (let [encoded-message (encode (merge {:type type :payload message} params))
+        send-to-channel! #(http/send! % encoded-message false)]
+    (if tag
+      (doseq [channel (channels-by-tag endpoint tag)]
+        (send-to-channel! channel))
+      (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
+        (send-to-channel! channel)
+        (throw (ex-info "Client not connected" {:client-id client-id}))))))
 
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
@@ -131,14 +129,13 @@
     (send! endpoint message :client-id c)))
 
 (defn disconnect!
-  [endpoint & {:keys [client-id user-id]}]
-  {:pre [(xor client-id user-id)]}
-  (if user-id
-    (doseq [channel (->> @(:clients (endpoint)) vals (filter #(= user-id (-> % :user :id)))
-                         (map :channel) (remove nil?))]
-      (http/close channel))
-    (when-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
-      (http/close channel))))
+  [endpoint & {:keys [client-id tag]}]
+  {:pre [(xor client-id tag)]}
+  (doseq [channel (if tag
+                    (channels-by-tag endpoint)
+                    [(get-in @(:clients (endpoint))
+                             [client-id :channel])])]
+    (http/close channel)))
 
 (defn- encode
   [data]
@@ -150,3 +147,10 @@
   [data]
   (let [in (ByteArrayInputStream. (.getBytes data))]
     (transit/read (transit/reader in :json))))
+
+(defn- channels-by-tag
+  [endpoint tag]
+  (->> @(:clients (endpoint)) vals
+       (filter #(get (:tags %) tag))
+       (map :channel)
+       (remove nil?)))

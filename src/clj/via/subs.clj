@@ -41,11 +41,9 @@
            :queue (-> [#'via/interceptor]
                       (concat interceptors)
                       (concat [(interceptor/handler
-                                id (fn [{:keys [endpoint
-                                               client-id
-                                               sub-v
-                                               callback] :as coeffects} _]
-                                     (let [coeffects (dissoc coeffects :sub-v :callback)]
+                                id (fn [coeffects _]
+                                     (let [{:keys [endpoint client-id sub-v callback]} coeffects
+                                           coeffects (dissoc coeffects :sub-v :callback)]
                                        {::context
                                         (sub-fn (merge
                                                  coeffects
@@ -83,13 +81,10 @@
   (when-let [{:keys [sub-fn] :as sub-context} (get @handlers (first sub-v))]
     (let [result (-> (merge {:endpoint endpoint
                              :request (assoc request :ring-request ring-request)
-                             :token (:token request)
                              :client-id client-id
                              :coeffects {:sub-v sub-v
                                          :callback callback}}
                             sub-context)
-                     (cond-> (:clients (endpoint))
-                       (assoc :user (get-in @(:clients (endpoint)) [client-id :user])))
                      interceptor/run)]
       (boolean
        (when-let [result-context (-> result :effects ::context)]

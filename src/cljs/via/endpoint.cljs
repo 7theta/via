@@ -33,7 +33,6 @@
       :as opts}]
   (let [endpoint {:url url
                   :stream (atom nil)
-                  :token (atom nil)
                   :subscriptions (atom {})
                   :control-ch (atom nil)
                   :requests (atom {})}]
@@ -121,7 +120,6 @@
                   (if-let [stream @(:stream endpoint)]
                     (go (>! (:sink (<! stream))
                             (merge {:type type
-                                    :token @(:token endpoint)
                                     :payload message} params)))
                     (throw (js/Error. ":via.client/endpoint - not connected"))))]
     (if-not success-fn
@@ -134,22 +132,6 @@
                                  :timer (js/setTimeout (fsafe timeout-fn) timeout)})
         (do-send message {:request-id request-id
                           :timeout timeout})))))
-
-(defn authenticate!
-  [endpoint {:keys [id password]} & {:keys [success-fn failure-fn timeout timeout-fn]}]
-  (send! endpoint {:id id :password password}
-         :type :authentication-request
-         :success-fn (fn [{:keys [payload] :as reply}]
-                       (reset! (:token (endpoint)) (:token payload))
-                       (handle-event (endpoint) :auth-open {:status :ok
-                                                            :user payload})
-                       (success-fn payload))
-         :failure-fn (fn [{:keys [payload] :as reply}]
-                       (reset! (:token (endpoint)) nil)
-                       (handle-event (endpoint) :auth-close payload)
-                       (failure-fn (:error payload)))
-         :timeout timeout
-         :timeout-fn #(do (handle-event (endpoint) :auth-close {:status :timeout}) (timeout-fn))))
 
 (defn- handle-event
   [endpoint type data]
