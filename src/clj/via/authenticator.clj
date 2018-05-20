@@ -43,7 +43,7 @@
                             :queue []   ; Stop any further execution
                             :effects {:reply {:error :invalid-token :token token}})))))))
     (reg-event-via
-     :via/email-password-login
+     :via/id-password-login
      (fn [context [_ {:keys [id password]}]]
        (if-let [user (authenticate authenticator id password)]
          {:client/merge-data {:token (:token user)}

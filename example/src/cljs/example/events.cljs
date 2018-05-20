@@ -15,7 +15,7 @@
  :example/login
  (fn [{:keys [db]} _]
    {:via/dispatch
-    {:event [:via/email-password-login {:id "admin" :password "admin"}]
+    {:event [:via/id-password-login {:id "admin" :password "admin"}]
      :on-success [:example.login/succeeded]
      :on-failure [:example.login/failed]
      :on-timeout [:example.login/timed-out]}}))
