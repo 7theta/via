@@ -8,4 +8,4 @@
  :api.example/increment-count
  [#'auth/interceptor]
  (fn [_ _]
-   {:reply (swap! counter inc)}))
+   {:client/reply (swap! counter inc)}))
