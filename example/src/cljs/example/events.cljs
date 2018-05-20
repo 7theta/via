@@ -14,10 +14,11 @@
 (reg-event-fx
  :example/login
  (fn [{:keys [db]} _]
-   {:via/authenticate {:id "admin" :password "admin"
-                       :on-success [:example.login/succeeded]
-                       :on-failure [:example.login/failed]
-                       :on-timeout [:example.login/timed-out]}}))
+   {:via/dispatch
+    {:event [:via/email-password-login {:id "admin" :password "admin"}]
+     :on-success [:example.login/succeeded]
+     :on-failure [:example.login/failed]
+     :on-timeout [:example.login/timed-out]}}))
 
 (reg-event-fx
  :example.login/succeeded

@@ -42,7 +42,7 @@
       :id :via.endpoint/interceptor
       :before #(update % :coeffects merge {:endpoint endpoint :request (:request %)})
       :after (fn [context]
-               (when-let [response (get-in context [:effects :reply])]
+               (when-let [response (get-in context [:effects :client/reply])]
                  (when (:request-id context)
                    (send! (fn [] endpoint) response
                           :type :reply

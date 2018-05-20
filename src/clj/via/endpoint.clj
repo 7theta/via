@@ -10,7 +10,6 @@
 
 (ns via.endpoint
   (:require [via.interceptor :refer [->interceptor]]
-            [via.authenticator :refer [authenticate]]
             [org.httpkit.server :refer [with-channel on-close on-receive
                                         sec-websocket-accept] :as http]
             [cognitect.transit :as transit]
@@ -20,7 +19,9 @@
             [integrant.core :as ig])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
-(declare encode decode send! channels-by-tag disconnect!)
+(declare encode decode send! channels-by-tag disconnect!
+
+         data replace-data! merge-data!)
 
 (def interceptor)
 
@@ -39,36 +40,36 @@
                         {:endpoint (fn [] endpoint)
                          :request (dissoc (:request %) :ring-request)
                          :ring-request (:ring-request (:request %))
-                         :client-id (:client-id %)})
+                         :client-id (:client-id %)
+                         :client (get @clients (:client-id %))})
        :after (fn [context]
+                (when-let [{:keys [client-id tag]} (get-in context [:effects :client/disconnect])]
+                  (disconnect! (fn [] endpoint) :client-id client-id :tag tag))
 
-                (if-let [{:keys [client-id tag]} (get-in context [:effects :disconnect])]
-                  (disconnect!
-                   (fn [] endpoint)
-                   :client-id client-id
-                   :tag tag)
-                  (do
+                (if-let [replace-data (get-in context [:effects :client/replace-data])]
+                  (replace-data! (fn [] endpoint) (:client-id context) replace-data)
+                  (when-let [merge-data (get-in context [:effects :client/merge-data])]
+                    (merge-data! (fn [] endpoint) (:client-id context) merge-data)))
 
-                    (when-let [response (get-in context [:effects :reply])]
-                      (when (:request-id context)
-                        (send! (fn [] endpoint) response
-                               :type :reply
-                               :client-id (:client-id context)
-                               :params {:status (:status context)
-                                        :request-id (:request-id context)})))
+                (when-let [response (get-in context [:effects :client/reply])]
+                  (when (:request-id context)
+                    (send! (fn [] endpoint) response
+                           :type :reply
+                           :client-id (:client-id context)
+                           :params {:status (:status context)
+                                    :request-id (:request-id context)})))
 
-                    (let [add-tags (get-in context [:effects :add-tags])
-                          remove-tags (get-in context [:effects :remove-tags])
-                          replace-tags (get-in context [:effects :replace-tags])]
-                      (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
-                        (when-let [client-id (:client-id context)]
-                          (swap! clients update-in [client-id :replace-tags]
-                                 #(if (seq replace-tags)
-                                    (set replace-tags)
-                                    (cond-> (set %)
-                                      add-tags (union (set add-tags))
-                                      remove-tags (difference (set remove-tags))))))))))
-
+                (let [add-tags (get-in context [:effects :client/add-tags])
+                      remove-tags (get-in context [:effects :client/remove-tags])
+                      replace-tags (get-in context [:effects :client/replace-tags])]
+                  (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
+                    (when-let [client-id (:client-id context)]
+                      (swap! clients update-in [client-id :tags]
+                             #(if (seq replace-tags)
+                                (set replace-tags)
+                                (cond-> (set %)
+                                  add-tags (union (set add-tags))
+                                  remove-tags (difference (set remove-tags))))))))
                 context))))
     (fn
       ([] endpoint)
@@ -79,7 +80,7 @@
          (with-channel request channel
            (let [client-id (str (java.util.UUID/randomUUID))]
              (handle-event :open {:client-id client-id :status :initial})
-             (swap! clients assoc client-id {:channel channel :ring-request request})
+             (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
              (on-close channel
                        (fn [status]
                          (swap! clients dissoc client-id)
@@ -150,3 +151,17 @@
        (filter #(get (:tags %) tag))
        (map :channel)
        (remove nil?)))
+
+(defn- data
+  [endpoint client-id]
+  (get-in @(:clients (endpoint)) [client-id :data]))
+
+(defn- merge-data!
+  [endpoint client-id data]
+  (when client-id
+    (swap! (:clients (endpoint)) update-in [client-id :data] merge data)))
+
+(defn- replace-data!
+  [endpoint client-id data]
+  (when client-id
+    (swap! (:clients (endpoint)) assoc-in [client-id :data] data)))
