@@ -37,7 +37,8 @@
                  (let [token (:token context)]
                    (if (validate-token authenticator token)
                      context
-                     (assoc context :status 403
+                     (assoc context
+                            :status 403
                             :queue []   ; Stop any further execution
                             :effects {:reply {:error :invalid-token :token token}})))))))
     authenticator))
