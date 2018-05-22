@@ -160,4 +160,5 @@
        (st/join "&") vector
        (filter seq)
        (cons url)
-       (st/join "?")))
+       (st/join "?")
+       js/encodeURI))
