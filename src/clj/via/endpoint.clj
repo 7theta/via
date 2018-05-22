@@ -74,7 +74,10 @@
       ([] endpoint)
       ([request]
        (let [handle-event (fn [message data]
-                            (doseq [handler (->> @subscriptions vals (map message) (remove nil?))]
+                            (doseq [handler (->> @subscriptions
+                                                 vals
+                                                 (map message)
+                                                 (remove nil?))]
                               (handler data)))]
          (with-channel request channel
            (let [client-id (str (java.util.UUID/randomUUID))]

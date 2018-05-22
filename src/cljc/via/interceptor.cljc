@@ -51,7 +51,8 @@
 
 (defn- run-interceptor
   [context interceptor direction]
-  (((if (= direction :forward) :before :after) interceptor) context))
+  (when-let [f ((if (= direction :forward) :before :after) interceptor)]
+    (f context)))
 
 (defn- run-interceptors
   [context direction]

@@ -1,7 +1,7 @@
 (ns example.subs
   (:require-macros [reagent.ratom :refer [reaction]])
   (:require [via.subs :refer [reg-sub-via]]
-            [re-frame.core :refer [reg-sub]]))
+            [re-frame.core :refer [reg-sub subscribe]]))
 
 (reg-sub
  :example/authenticated?
