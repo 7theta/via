@@ -14,5 +14,11 @@
                  :style {:margin-left "12px"}} [:font {:size "+1"} "+"]]]
       [:br]
       [:div {:style {:margin-top "20px"}}
-       "Auto Increment Count: " @(subscribe [:api.example/auto-increment-count])]]
+       "Auto Increment Count: " @(subscribe [:api.example/auto-increment-count])]
+      [:div {:style {:margin-top "20px"}}
+       (str "Auto Increment Accumulator: "
+            @(subscribe [:api.example.acc/auto-increment-count]))]
+      [:div {:style {:margin-top "20px"}}
+       (str "Auto Increment Accumulator Sum: "
+            @(subscribe [:api.example.acc/auto-increment-count-sum]))]]
      [:button {:on-click #(dispatch [:example/login])} [:font {:size "+1"} "Login"]])])

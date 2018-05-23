@@ -1,6 +1,6 @@
 (ns example.config
   (:require [example.events]
-            [example.subs]
+            [example.streams]
             [integrant.core :as ig]))
 
 ;;; Public
@@ -15,7 +15,7 @@
    :via/events
    {:endpoint (ig/ref :via/endpoint)}
 
-   :via/subs
+   :via/streams
    {:endpoint (ig/ref :via/endpoint)
     :events (ig/ref :via/events)}
 
