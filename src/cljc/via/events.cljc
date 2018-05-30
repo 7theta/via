@@ -44,9 +44,13 @@
 
 (defn- handle-request
   [endpoint {:keys [payload request-id] :as request}]
-  (when-let [context (get @handlers (first payload))]
+  (if-let [context (get @handlers (first payload))]
     (-> context
         (merge {:event payload
                 :request request}
                (select-keys request [:client-id :request-id]))
-        interceptor/run)))
+        interceptor/run)
+    (throw
+     (ex-info
+      (str "Unhandled request: " (pr-str (:payload request)))
+      {:payload (:payload request)}))))

@@ -1,8 +1,8 @@
-(ns example.subs
-  (:require [via.subs :refer [reg-sub-via]]
+(ns example.streams
+  (:require [via.streams :refer [reg-stream-via]]
             [via.authenticator :as auth]))
 
-(reg-sub-via
+(reg-stream-via
  :api.example/auto-increment-count
  [#'auth/interceptor]
  (fn [{:keys [callback] :as ctx} args]
