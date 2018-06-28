@@ -1,5 +1,6 @@
 (ns example.views
-  (:require [re-frame.core :refer [subscribe dispatch]]))
+  (:require [via.subs :as via]
+            [re-frame.core :refer [subscribe dispatch]]))
 
 (defn main-panel []
   [:div {:style {:margin "40px"}}
@@ -14,5 +15,5 @@
                  :style {:margin-left "12px"}} [:font {:size "+1"} "+"]]]
       [:br]
       [:div {:style {:margin-top "20px"}}
-       "Auto Increment Count: " @(subscribe [:api.example/auto-increment-count])]]
+       "Auto Increment Count: " @(via/subscribe [:api.example/auto-increment-count])]]
      [:button {:on-click #(dispatch [:example/login])} [:font {:size "+1"} "Login"]])])

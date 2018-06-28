@@ -10,8 +10,8 @@
 
 (ns via.endpoint
   (:require-macros [cljs.core.async.macros :refer [go alt!]])
-  (:require [via.interceptor :refer [->interceptor]]
-            [via.defaults :refer [default-via-endpoint]]
+  (:require [via.defaults :refer [default-via-endpoint]]
+            [signum.interceptors :refer [->interceptor]]
             [haslett.client :as ws]
             [haslett.format :as fmt]
             [utilis.fn :refer [fsafe]]
@@ -107,7 +107,7 @@
     (swap! (:subscriptions (endpoint)) assoc key callbacks)
     key))
 
-(defn unsubscribe
+(defn dispose
   [endpoint key]
   (swap! (:subscriptions (endpoint)) dissoc key))
 

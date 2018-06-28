@@ -9,8 +9,9 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.events
-  (:require [via.interceptor :as interceptor]
-            [via.endpoint :refer [subscribe unsubscribe send!] :as endpoint]
+  (:require [via.interceptors :as via-interceptors]
+            [via.endpoint :refer [subscribe dispose send!] :as endpoint]
+            [signum.interceptors :as interceptors]
             [utilis.fn :refer [fsafe]]
             [integrant.core :as ig]))
 
@@ -28,7 +29,7 @@
 
 (defmethod ig/halt-key! :via/events
   [_ {:keys [endpoint sub-key]}]
-  (unsubscribe endpoint sub-key))
+  (dispose endpoint sub-key))
 
 (defn reg-event-via
   ([id handler]
@@ -36,7 +37,7 @@
   ([id interceptors handler]
    (swap! handlers assoc id {:queue (-> [#'endpoint/interceptor]
                                         (concat interceptors)
-                                        (concat [(interceptor/handler id handler)]))
+                                        (concat [(via-interceptors/handler id handler)]))
                              :stack []})
    id))
 
@@ -49,7 +50,7 @@
         (merge {:event payload
                 :request request}
                (select-keys request [:client-id :request-id]))
-        interceptor/run)
+        interceptors/run)
     (throw
      (ex-info
       (str "Unhandled request: " (pr-str (:payload request)))

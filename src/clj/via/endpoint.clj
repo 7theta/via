@@ -9,7 +9,7 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.interceptor :refer [->interceptor]]
+  (:require [signum.interceptors :refer [->interceptor]]
             [org.httpkit.server :refer [with-channel on-close on-receive
                                         sec-websocket-accept] :as http]
             [cognitect.transit :as transit]
@@ -102,7 +102,7 @@
     (swap! (:subscriptions (endpoint)) assoc key callbacks)
     key))
 
-(defn unsubscribe
+(defn dispose
   [endpoint key]
   (when-let [subs (:subscriptions ((fsafe endpoint)))]
     (swap! subs dissoc key)))

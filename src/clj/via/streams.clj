@@ -9,15 +9,16 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.streams
-  (:require [via.interceptor :as interceptor]
+  (:require [via.interceptors :as via-interceptors]
             [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
+            [signum.interceptors :as interceptors]
             [integrant.core :as ig]))
 
 (defonce ^:private handlers (atom {}))
 (defonce ^:private streams (atom {}))
 
-(declare subscribe unsubscribe value-handler)
+(declare subscribe dispose value-handler)
 
 (defmethod ig/init-key :via/streams
   [_ {:keys [endpoint]}]
@@ -25,13 +26,13 @@
    :sub-key (via/subscribe
              endpoint
              {:close (fn [{:keys [client-id]}]
-                       (unsubscribe endpoint client-id))})})
+                       (dispose endpoint client-id))})})
 
 (defmethod ig/halt-key! :via/streams
   [_ {:keys [endpoint sub-key]}]
-  (via/unsubscribe endpoint sub-key)
+  (via/dispose endpoint sub-key)
   (doseq [[sub-v client-id] (keys @streams)]
-    (unsubscribe endpoint client-id sub-v)))
+    (dispose endpoint client-id sub-v)))
 
 (defn reg-stream-via
   ([id sub-fn dispose-fn]
@@ -42,7 +43,7 @@
     {:dispose-fn dispose-fn
      :queue (-> [#'via/interceptor]
                 (concat interceptors)
-                (concat [(interceptor/handler
+                (concat [(via-interceptors/handler
                           id (partial value-handler sub-fn))]))
      :stack []})))
 
@@ -57,10 +58,10 @@
        :sub-v sub-v})}))
 
 (reg-event-via
- :via.streams/unsubscribe
+ :via.streams/dispose
  (fn [{:keys [endpoint client-id]} [_ {:keys [sub-v]}]]
    {:client/reply
-    (if (unsubscribe endpoint client-id sub-v)
+    (if (dispose endpoint client-id sub-v)
       {:status :success}
       {:status :error
        :error :invalid-subscription
@@ -75,18 +76,18 @@
                              :coeffects {:sub-v sub-v
                                          :callback callback}}
                             sub-context)
-                     interceptor/run)]
+                     interceptors/run)]
       (boolean
        (when-let [result-context (-> result :effects ::context)]
          (swap! streams assoc [sub-v client-id] result-context)
          true)))
     (throw (ex-info "No handler registered" {:sub-v sub-v}))))
 
-(defn unsubscribe
+(defn dispose
   ([endpoint client-id]
    (doseq [[sub-v _] (->> @streams keys
                           (filter #(= client-id (second %))))]
-     (unsubscribe endpoint client-id sub-v)))
+     (dispose endpoint client-id sub-v)))
   ([endpoint client-id sub-v]
    (when-let [context (get @streams [sub-v client-id])]
      ((get-in @handlers [(first sub-v) :dispose-fn]) context)
@@ -112,6 +113,6 @@
                           :client-id client-id)
                true
                (catch Exception _
-                 (unsubscribe endpoint client-id)
+                 (dispose endpoint client-id)
                  false)))})
          (sub-fn sub-v))}))

@@ -17,6 +17,9 @@
    :via/events
    {:endpoint (ig/ref :via/endpoint)}
 
+   :via/subs
+   {:endpoint (ig/ref :via/endpoint)}
+
    :via/streams
    {:endpoint (ig/ref :via/endpoint)
     :events (ig/ref :via/events)}

@@ -1,5 +1,5 @@
 (ns example.test-client
-  (:require [via.endpoint :refer [subscribe unsubscribe] :as via]
+  (:require [via.endpoint :refer [subscribe dispose] :as via]
             [re-frame.core :refer [dispatch]]
             [integrant.core :as ig]))
 
@@ -13,4 +13,4 @@
 
 (defmethod ig/halt-key! :example/test-client
   [_ {:keys [endpoint sub-key]}]
-  (unsubscribe endpoint sub-key))
+  (dispose endpoint sub-key))

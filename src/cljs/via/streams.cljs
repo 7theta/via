@@ -22,7 +22,7 @@
 (defonce ^:private streams (atom #{}))
 (defonce ^:private rfs (atom {}))
 
-(declare path subscribe unsubscribe)
+(declare path subscribe dispose)
 
 ;;; Public
 
@@ -32,7 +32,7 @@
   (add-watch streams :via/streams
              (fn [_key _ref old-value new-value]
                (let [[removed added _] (diff old-value new-value)]
-                 (doseq [s removed] (unsubscribe endpoint s))
+                 (doseq [s removed] (dispose endpoint s))
                  (doseq [s added] (subscribe endpoint s)))))
   {:endpoint endpoint
    :events events})
@@ -105,7 +105,7 @@
     {:sub-v sub-v
      :callback [:via.streams.db/on-receive]}]))
 
-(defn- unsubscribe
+(defn- dispose
   [endpoint sub-v]
-  (via/send! endpoint [:via.streams/unsubscribe {:sub-v sub-v}])
+  (via/send! endpoint [:via.streams/dispose {:sub-v sub-v}])
   (dispatch [:via.streams.db/clear {:path (path sub-v)}]))

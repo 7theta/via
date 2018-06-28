@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "0.11.0"
+(defproject com.7theta/via "1.0.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -25,6 +25,8 @@
                  [buddy/buddy-hashers "1.3.0"]
                  [com.cognitect/transit-clj "0.8.309" :exclusions [com.fasterxml.jackson.core/jackson-core]]
                  [http-kit "2.3.0"]
+
+                 [com.7theta/signum "0.1.0"]
 
                  [com.7theta/utilis "1.1.0"]
                  [integrant "0.6.3"]]
@@ -57,4 +59,6 @@
                                               day8.re-frame-10x.preload]
                                    :closure-defines {"re_frame.trace.trace_enabled_QMARK_" true}
                                    :external-config {:devtools/config {:features-to-install :all}}}}]}
-  :prep-tasks [ "compile"])
+  :prep-tasks ["compile"]
+  :scm {:name "git"
+        :url "https://github.com/7theta/via"})

@@ -1,5 +1,6 @@
 (ns example.config
   (:require [example.events]
+            [example.subs]
             [example.streams]
             [integrant.core :as ig]))
 
@@ -13,6 +14,9 @@
    {:authenticator (ig/ref :via/authenticator)}
 
    :via/events
+   {:endpoint (ig/ref :via/endpoint)}
+
+   :via/subs
    {:endpoint (ig/ref :via/endpoint)}
 
    :via/streams

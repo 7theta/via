@@ -9,8 +9,8 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.authenticator
-  (:require [via.interceptor :refer [->interceptor]]
-            [via.events :refer [reg-event-via]]
+  (:require [via.events :refer [reg-event-via]]
+            [signum.interceptors :refer [->interceptor]]
             [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
