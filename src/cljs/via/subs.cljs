@@ -11,6 +11,7 @@
 (ns via.subs
   (:require [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
+            [utilis.types.keyword :refer [->keyword]]
             [re-frame.core :refer [reg-sub-raw reg-event-db dispatch] :as re-frame]
             [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
@@ -38,19 +39,20 @@
   (via/dispose endpoint sub-key))
 
 (defn subscribe
-  [[query-id & _ :as query-v]]
-  (if (get @subscriptions query-v)
-    (re-frame/subscribe query-v)
-    (do
-      (reg-sub-raw
-       query-id
-       (fn [db query-v]
-         (swap! subscriptions conj query-v)
-         (make-reaction
-          #(get-in @db (path query-v))
-          :on-dispose #(swap! subscriptions disj query-v))))
-      (swap! subscriptions conj query-v)
-      (re-frame/subscribe query-v))))
+  [query-v]
+  (let [[local-query-id & _ :as local-query-v]
+        (update query-v 0 #(->> % str rest (apply str "via.") ->keyword))]
+    (if (re-frame.registrar/get-handler :sub local-query-id)
+      (re-frame/subscribe local-query-v)
+      (do
+        (reg-sub-raw
+         local-query-id
+         (fn [db local-query-v]
+           (swap! subscriptions conj query-v)
+           (make-reaction
+            #(get-in @db (path query-v))
+            :on-dispose #(swap! subscriptions disj query-v))))
+        (re-frame/subscribe local-query-v)))))
 
 (reg-event-via
  :via.subs.db/updated
@@ -71,7 +73,7 @@
 
 (defn- path
   [query-v]
-  [:via/subs :cache query-v])
+  [:via.subs/cache query-v])
 
 (defn- via-subscribe
   [endpoint query-v]
