@@ -60,7 +60,7 @@
 
 (defn- subscribe
   [{:keys [endpoint client-id] :as event-context} [query-id & _ :as query-v] callback]
-  (if-let [signal (signum/subscribe query-v event-context)]
+  (if-let [signal (signum/subscribe query-v :context event-context)]
     (let [watch-key (keyword (str query-v client-id))
           send-value! #(try
                          (via/send! endpoint
