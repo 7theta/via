@@ -23,3 +23,11 @@
    [(subscribe [:api.example/my-counter])])
  (fn [[value] query-v]
    [value (inc value)]))
+
+(reg-sub
+ :api.example/auto-increment-string
+ [#'via/interceptor #'auth/interceptor]
+ (fn [query-v]
+   [(subscribe [:api.example/my-counter])])
+ (fn [[value] [_ some-text]]
+   [value (str some-text "-" value)]))

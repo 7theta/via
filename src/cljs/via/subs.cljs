@@ -48,10 +48,13 @@
         (reg-sub-raw
          local-query-id
          (fn [db local-query-v]
-           (swap! subscriptions conj query-v)
-           (make-reaction
-            #(get-in @db (path query-v))
-            :on-dispose #(swap! subscriptions disj query-v))))
+           (let [remote-query-v (assoc local-query-v 0 (first query-v))]
+             (swap! subscriptions conj remote-query-v)
+             (make-reaction
+              #(get-in @db (path remote-query-v))
+              :on-dispose #(do
+                             (re-frame.registrar/clear-handlers :sub local-query-id)
+                             (swap! subscriptions disj remote-query-v))))))
         (re-frame/subscribe local-query-v)))))
 
 (reg-event-via

@@ -15,5 +15,7 @@
                  :style {:margin-left "12px"}} [:font {:size "+1"} "+"]]]
       [:br]
       [:div {:style {:margin-top "20px"}}
-       "Auto Increment Count: " (str @(via/subscribe [:api.example/auto-increment-count]))]]
+       "Auto Increment Count: " (str @(via/subscribe [:api.example/auto-increment-count]))]
+      [:div {:style {:margin-top "20px"}}
+       "Auto Increment String: " (str @(via/subscribe [:api.example/auto-increment-string "foo"]))]]
      [:button {:on-click #(dispatch [:example/login])} [:font {:size "+1"} "Login"]])])
