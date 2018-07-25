@@ -1,7 +1,6 @@
 (ns example.config
   (:require [example.events]
             [example.subs]
-            [example.streams]
             [integrant.core :as ig]))
 
 ;;; Public
@@ -11,17 +10,13 @@
    {:query-fn (ig/ref [:example/user-store])}
 
    :via/endpoint
-   {:authenticator (ig/ref :via/authenticator)}
+   {}
 
    :via/events
    {:endpoint (ig/ref :via/endpoint)}
 
    :via/subs
    {:endpoint (ig/ref :via/endpoint)}
-
-   :via/streams
-   {:endpoint (ig/ref :via/endpoint)
-    :events (ig/ref :via/events)}
 
    :example/user-store
    nil

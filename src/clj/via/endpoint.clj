@@ -24,7 +24,7 @@
 
 (def interceptor)
 
-(defmethod ig/init-key :via/endpoint [_ {:keys [authenticator]}]
+(defmethod ig/init-key :via/endpoint [_ {:keys []}]
   (let [subscriptions (atom {})
         clients (atom {})
         params (atom {})
@@ -42,15 +42,15 @@
                          :client-id (:client-id %)
                          :client (get @clients (:client-id %))})
        :after (fn [context]
-                (when-let [{:keys [client-id tag]} (get-in context [:effects :client/disconnect])]
+                (when-let [{:keys [client-id tag]} (get-in context [:effects :via/disconnect])]
                   (disconnect! (fn [] endpoint) :client-id client-id :tag tag))
 
-                (if-let [replace-data (get-in context [:effects :client/replace-data])]
+                (if-let [replace-data (get-in context [:effects :via/replace-data])]
                   (replace-data! (fn [] endpoint) (:client-id context) replace-data)
-                  (when-let [merge-data (get-in context [:effects :client/merge-data])]
+                  (when-let [merge-data (get-in context [:effects :via/merge-data])]
                     (merge-data! (fn [] endpoint) (:client-id context) merge-data)))
 
-                (when-let [response (get-in context [:effects :client/reply])]
+                (when-let [response (get-in context [:effects :via/reply])]
                   (when (:request-id context)
                     (send! (fn [] endpoint) response
                            :type :reply
@@ -58,9 +58,9 @@
                            :params {:status (:status context)
                                     :request-id (:request-id context)})))
 
-                (let [add-tags (get-in context [:effects :client/add-tags])
-                      remove-tags (get-in context [:effects :client/remove-tags])
-                      replace-tags (get-in context [:effects :client/replace-tags])]
+                (let [add-tags (get-in context [:effects :via/add-tags])
+                      remove-tags (get-in context [:effects :via/remove-tags])
+                      replace-tags (get-in context [:effects :via/replace-tags])]
                   (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
                     (when-let [client-id (:client-id context)]
                       (swap! clients update-in [client-id :tags]
@@ -86,7 +86,6 @@
              (on-close channel
                        (fn [status]
                          (swap! clients dissoc client-id)
-                         (handle-event :auth-close {:client-id client-id :status status})
                          (handle-event :close {:client-id client-id :status status})))
              (on-receive channel
                          (fn [message]

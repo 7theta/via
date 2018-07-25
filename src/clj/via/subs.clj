@@ -36,7 +36,7 @@
 (reg-event-via
  :via.subs/subscribe
  (fn [{:keys [endpoint ring-request request client-id]} [_ {:keys [query-v callback]}]]
-   {:client/reply
+   {:via/reply
     (if (subscribe {:endpoint endpoint
                     :request (assoc request :ring-request ring-request)
                     :client-id client-id}
@@ -49,7 +49,7 @@
 (reg-event-via
  :via.subs/dispose
  (fn [{:keys [endpoint client-id]} [_ {:keys [query-v]}]]
-   {:client/reply
+   {:via/reply
     (if (dispose endpoint client-id query-v)
       {:status :success}
       {:status :error

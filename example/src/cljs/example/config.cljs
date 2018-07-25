@@ -2,7 +2,6 @@
   (:require [via.endpoint]
             [via.events]
             [via.subs]
-            [via.streams]
             [via.fx]
             [example.test-client]
             [integrant.core :as ig]
@@ -19,10 +18,6 @@
 
    :via/subs
    {:endpoint (ig/ref :via/endpoint)}
-
-   :via/streams
-   {:endpoint (ig/ref :via/endpoint)
-    :events (ig/ref :via/events)}
 
    :via/fx
    {:endpoint (ig/ref :via/endpoint)}

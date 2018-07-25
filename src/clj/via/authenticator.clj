@@ -46,10 +46,10 @@
      :via/id-password-login
      (fn [context [_ {:keys [id password]}]]
        (if-let [user (authenticate authenticator id password)]
-         {:client/replace-data {:token (:token user)}
-          :client/reply user
+         {:via/replace-data {:token (:token user)}
+          :via/reply user
           :status 200}
-         {:client/reply {:error :invalid-credentials}
+         {:via/reply {:error :invalid-credentials}
           :status 403})))
     authenticator))
 
