@@ -7,7 +7,6 @@
    [:br]
    (if @(subscribe [:example/authenticated?])
      [:div
-      @(subscribe [:foo/blart])
       [:button {:on-click #(dispatch [:example/logout])} [:font {:size "+1"} "Logout"]]
       [:br]
       [:div {:style {:margin-top "20px"}}

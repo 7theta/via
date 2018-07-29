@@ -38,33 +38,22 @@
   [_ {:keys [endpoint sub-key]}]
   (via/dispose endpoint sub-key))
 
-
-(reg-sub-raw
- :foo/blart
- (fn [db query-v]
-   (js/console.log ":reaction/subscription" query-v)
-   (make-reaction
-    #(get-in @db [:foo :bar])
-    :on-dispose #(do
-                   (js/console.log ":reaction/on-dispose" query-v)))))
-
 (defn subscribe
-  [query-v]
-  (let [[local-query-id & _ :as local-query-v]
-        (update query-v 0 #(->> % str rest (apply str "via.") ->keyword))]
-    (when-not (re-frame.registrar/get-handler :sub local-query-id)
-      (reg-sub-raw
-       local-query-id
-       (fn [db local-query-v]
-         (let [remote-query-v (assoc local-query-v 0 (first query-v))]
-           (swap! subscriptions conj remote-query-v)
-           (js/console.log ":reaction/subscription" query-v @subscriptions)
-           (make-reaction
-            #(get-in @db (path remote-query-v))
-            :on-dispose #(do
-                           (swap! subscriptions disj remote-query-v)
-                           (js/console.log ":reaction/on-dispose" query-v @subscriptions)))))))
-    (re-frame/subscribe local-query-v)))
+  ([query-v]
+   (subscribe query-v nil))
+  ([query-v not-found]
+   (let [[local-query-id & _ :as local-query-v]
+         (update query-v 0 #(->> % str rest (apply str "via.") ->keyword))]
+     (when-not (re-frame.registrar/get-handler :sub local-query-id)
+       (reg-sub-raw
+        local-query-id
+        (fn [db local-query-v]
+          (let [remote-query-v (assoc local-query-v 0 (first query-v))]
+            (swap! subscriptions conj remote-query-v)
+            (make-reaction
+             #(get-in @db (path remote-query-v) not-found)
+             :on-dispose #(swap! subscriptions disj remote-query-v))))))
+     (re-frame/subscribe local-query-v))))
 
 (reg-event-via
  :via.subs.db/updated
