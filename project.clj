@@ -26,7 +26,7 @@
                  [com.cognitect/transit-clj "0.8.309" :exclusions [com.fasterxml.jackson.core/jackson-core]]
                  [http-kit "2.3.0"]
 
-                 [com.7theta/signum "0.1.0"]
+                 [com.7theta/signum "0.1.1"]
 
                  [com.7theta/utilis "1.1.0"]
                  [integrant "0.6.3"]]
