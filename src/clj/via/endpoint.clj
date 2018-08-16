@@ -55,7 +55,7 @@
                     (send! (fn [] endpoint) response
                            :type :reply
                            :client-id (:client-id context)
-                           :params {:status (:status context)
+                           :params {:status (get-in context [:effects :status])
                                     :request-id (:request-id context)})))
 
                 (let [add-tags (get-in context [:effects :via/add-tags])
