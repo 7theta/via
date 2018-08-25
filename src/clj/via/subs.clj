@@ -60,23 +60,22 @@
 
 (defn- subscribe
   [{:keys [endpoint client-id] :as event-context} [query-id & _ :as query-v] callback]
-  (if-let [signal (signum/subscribe query-v :context event-context)]
-    (let [watch-key (keyword (str query-v client-id))
-          send-value! #(try
-                         (via/send! endpoint
-                                    (conj (vec callback)
-                                          {:query-v query-v
-                                           :value %})
-                                    :client-id client-id)
-                         true
-                         (catch Exception _
-                           (dispose endpoint client-id)
-                           false))]
-      (swap! subscriptions assoc [query-v client-id] {:signal signal
-                                                      :watch-key watch-key})
-      (add-watch signal watch-key (fn [_ _ old new] (when (not= old new) (send-value! new))))
-      (send-value! @signal))
-    (throw (ex-info ":via.subs/subscribe Invalid Query" {:query-v query-v}))))
+  (let [signal (signum/subscribe query-v :context event-context)
+        watch-key (keyword (str query-v client-id))
+        send-value! #(try
+                       (via/send! endpoint
+                                  (conj (vec callback)
+                                        {:query-v query-v
+                                         :value %})
+                                  :client-id client-id)
+                       true
+                       (catch Exception _
+                         (dispose endpoint client-id)
+                         false))]
+    (swap! subscriptions assoc [query-v client-id] {:signal signal
+                                                    :watch-key watch-key})
+    (add-watch signal watch-key (fn [_ _ old new] (when (not= old new) (send-value! new))))
+    (send-value! @signal)))
 
 (defn- dispose
   ([endpoint client-id]
