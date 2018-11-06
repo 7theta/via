@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "1.1.0"
+(defproject com.7theta/via "1.3.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -18,7 +18,7 @@
                  [org.clojure/core.async "0.4.474"]
 
                  [reagent "0.8.1"]
-                 [re-frame "0.10.5"]
+                 [re-frame "0.10.6"]
                  [haslett "0.1.2" :exclusions [org.clojure/core.async]]
 
                  [buddy/buddy-auth "2.1.0" :exclusions [clout]]
@@ -26,7 +26,8 @@
                  [com.cognitect/transit-clj "0.8.313" :exclusions [com.fasterxml.jackson.core/jackson-core]]
                  [http-kit "2.3.0"]
 
-                 [com.7theta/signum "0.2.0"]
+                 [com.7theta/signum "0.3.0"]
+                 [com.7theta/distantia "0.1.0"]
 
                  [com.7theta/utilis "1.1.0"]
                  [integrant "0.6.3"]]
@@ -34,7 +35,7 @@
   :profiles {:dev {:source-paths ["dev/clj" "example/src/clj"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
-                   :dependencies [[ring/ring-core "1.6.3" :exclusions [ring/ring-codec]]
+                   :dependencies [[ring/ring-core "1.7.0" :exclusions [ring/ring-codec]]
                                   [ring/ring-defaults "0.3.2"]
                                   [ring/ring-anti-forgery "1.3.0"]
                                   [compojure "1.6.1"]

@@ -11,7 +11,7 @@
 (ns via.endpoint
   (:require [signum.interceptors :refer [->interceptor]]
             [org.httpkit.server :refer [with-channel on-close on-receive
-                                        sec-websocket-accept] :as http]
+                                        sec-websocket-accept websocket?] :as http]
             [cognitect.transit :as transit]
             [utilis.fn :refer [fsafe]]
             [utilis.logic :refer [xor]]
@@ -55,7 +55,7 @@
                     (send! (fn [] endpoint) response
                            :type :reply
                            :client-id (:client-id context)
-                           :params {:status (get-in context [:effects :status])
+                           :params {:status (get-in context [:effects :via/status])
                                     :request-id (:request-id context)})))
 
                 (let [add-tags (get-in context [:effects :via/add-tags])
@@ -80,20 +80,22 @@
                                                  (remove nil?))]
                               (handler data)))]
          (with-channel request channel
-           (let [client-id (str (java.util.UUID/randomUUID))]
-             (handle-event :open {:client-id client-id :status :initial})
-             (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
-             (on-close channel
-                       (fn [status]
-                         (swap! clients dissoc client-id)
-                         (handle-event :close {:client-id client-id :status status})))
-             (on-receive channel
-                         (fn [message]
-                           (handle-event
-                            :message
-                            (merge (decode message)
-                                   {:client-id client-id
-                                    :ring-request request})))))))))))
+           (if (websocket? channel)
+             (let [client-id (str (java.util.UUID/randomUUID))]
+               (handle-event :open {:client-id client-id :status :initial})
+               (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
+               (on-close channel
+                         (fn [status]
+                           (swap! clients dissoc client-id)
+                           (handle-event :close {:client-id client-id :status status})))
+               (on-receive channel
+                           (fn [message]
+                             (handle-event
+                              :message
+                              (merge (decode message)
+                                     {:client-id client-id
+                                      :ring-request request})))))
+             (http/send! channel {:status 404} true))))))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -134,6 +136,8 @@
                     [(get-in @(:clients (endpoint))
                              [client-id :channel])])]
     (http/close channel)))
+
+;;; Private
 
 (defn- encode
   [data]

@@ -9,4 +9,4 @@
  [#'auth/interceptor]
  (fn [_ _]
    {:via/reply (swap! counter inc)
-    :status 200}))
+    :via/status 200}))

@@ -13,6 +13,7 @@
             [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
             [signum.subs :as signum]
+            [distantia.core :refer [diff]]
             [integrant.core :as ig]))
 
 (defonce ^:private subscriptions (atom {}))
@@ -60,22 +61,26 @@
 
 (defn- subscribe
   [{:keys [endpoint client-id] :as event-context} [query-id & _ :as query-v] callback]
-  (let [signal (signum/subscribe query-v :context event-context)
-        watch-key (keyword (str query-v client-id))
-        send-value! #(try
-                       (via/send! endpoint
-                                  (conj (vec callback)
-                                        {:query-v query-v
-                                         :value %})
-                                  :client-id client-id)
-                       true
-                       (catch Exception _
-                         (dispose endpoint client-id)
-                         false))]
-    (swap! subscriptions assoc [query-v client-id] {:signal signal
-                                                    :watch-key watch-key})
-    (add-watch signal watch-key (fn [_ _ old new] (when (not= old new) (send-value! new))))
-    (send-value! @signal)))
+  (when-let [signal (signum/subscribe query-v :context event-context)]
+    (let [watch-key (keyword (str query-v client-id))
+          send-value! #(try
+                         (via/send! endpoint
+                                    (conj (vec callback)
+                                          {:query-v query-v
+                                           :change %})
+                                    :client-id client-id)
+                         true
+                         (catch Exception _
+                           (dispose endpoint client-id)
+                           false))]
+      (swap! subscriptions assoc [query-v client-id] {:signal signal
+                                                      :watch-key watch-key})
+      (add-watch signal watch-key (fn [_ _ old new]
+                                    (when (not= old new)
+                                      (send-value! (if (or (map? new) (vector? new))
+                                                     [:p (diff old new)]
+                                                     [:v new])))))
+      (send-value! [:v @signal]))))
 
 (defn- dispose
   ([endpoint client-id]

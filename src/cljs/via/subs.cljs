@@ -11,6 +11,7 @@
 (ns via.subs
   (:require [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
+            [distantia.core :refer [patch]]
             [utilis.types.keyword :refer [->keyword]]
             [re-frame.core :refer [reg-sub-raw reg-event-db dispatch] :as re-frame]
             [reagent.ratom :refer [make-reaction]]
@@ -54,13 +55,15 @@
 
 (reg-event-via
  :via.subs.db/updated
- (fn [_ [_ {:keys [query-v value]}]]
-   (dispatch [:via.subs.db/write {:path (path query-v) :value value}])))
+ (fn [_ [_ {:keys [query-v change]}]]
+   (dispatch [:via.subs.db/write {:path (path query-v) :change change}])))
 
 (reg-event-db
  :via.subs.db/write
- (fn [db [_ {:keys [path value]}]]
-   (assoc-in db path value)))
+ (fn [db [_ {:keys [path change]}]]
+   (if (= :v (first change))
+     (assoc-in db path (second change))
+     (update-in db path patch (second change)))))
 
 (reg-event-db
  :via.subs.db/clear

@@ -47,7 +47,7 @@
                    (send! (fn [] endpoint) response
                           :type :reply
                           :client-id (:client-id context)
-                          :params {:status (:status context)
+                          :params {:status (get-in context [:effects :via/status])
                                    :request-id (:request-id context)})))
                context)))
     (when auto-connect (connect! (fn [] endpoint) connect-opts))
@@ -64,26 +64,26 @@
   ([endpoint {:keys [params]}]
    (let [endpoint (endpoint)]
      (when-not @(:stream endpoint)
-       (let [stream (ws/connect
-                     (append-query-params
-                      (:url endpoint)
-                      params)
-                     {:format fmt/transit})
+       (let [stream (ws/connect (append-query-params (:url endpoint) params)
+                                {:format fmt/transit})
              control-ch (chan)]
          (go
-           (let [stream (<! stream)]
+           (let [{:keys [socket close-status source sink] :as stream} (<! stream)]
              (handle-event endpoint :open {:status :initial})
              (loop []
                (alt!
                  control-ch (ws/close stream)
-                 (:source stream) ([message]
-                                   (if (nil? message)
-                                     (handle-event endpoint :close {:status :server-closed})
-                                     (do
-                                       (case (:type message)
-                                         :message (handle-event endpoint :message message)
-                                         :reply (handle-reply endpoint message))
-                                       (recur))))))))
+                 source ([message]
+                         (when (nil? message)
+                           (js/console.error "via: nil message from server"))
+                         (when-not (nil? message)
+                           (case (:type message)
+                             :message (handle-event endpoint :message message)
+                             :reply (handle-reply endpoint message)))
+                         (recur))
+                 close-status ([status]
+                               (js/console.error "via: connection closed" status)
+                               (handle-event endpoint :close {:status status}))))))
          (reset! (:stream endpoint) stream)
          (when-let [old-control-ch @(:control-ch endpoint)] (close! old-control-ch))
          (reset! (:control-ch endpoint) control-ch))))))

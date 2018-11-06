@@ -15,6 +15,9 @@
   [id handler-fn]
   (->interceptor
    :id id
-   :before #(let [effects (handler-fn (:coeffects %) (:event %))]
-              (-> % (update :effects merge effects)
-                  (assoc :status 200)))))
+   :before (fn [{:keys [coeffects event] :as context}]
+             (let [effects (handler-fn coeffects event)
+                   status (get effects :via/status 200)]
+               (-> context
+                   (update :effects merge effects)
+                   (assoc :status status))))))

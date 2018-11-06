@@ -39,18 +39,18 @@
                    (if (validate-token authenticator token)
                      context
                      (assoc context
-                            :status 403
                             :queue []   ; Stop any further execution
-                            :effects {:reply {:error :invalid-token :token token}})))))))
+                            :effects {:via/status 403
+                                      :via/reply {:error :invalid-token :token token}})))))))
     (reg-event-via
      :via/id-password-login
      (fn [context [_ {:keys [id password]}]]
        (if-let [user (authenticate authenticator id password)]
          {:via/replace-data {:token (:token user)}
           :via/reply user
-          :status 200}
+          :via/status 200}
          {:via/reply {:error :invalid-credentials}
-          :status 403})))
+          :via/status 403})))
     authenticator))
 
 (defn authenticate

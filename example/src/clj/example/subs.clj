@@ -19,15 +19,16 @@
 (reg-sub
  :api.example/auto-increment-count
  [#'via/interceptor #'auth/interceptor]
- (fn [query-v]
-   (subscribe [:api.example/my-counter]))
+ (fn [query-v & {:keys [context]}]
+   (subscribe [:api.example/my-counter] :context context))
  (fn [value query-v]
    [value (inc value)]))
 
 (reg-sub
  :api.example/auto-increment-string
  [#'via/interceptor #'auth/interceptor]
- (fn [query-v]
-   [(subscribe [:api.example/my-counter])])
+ (fn [query-v & {:keys [context]}]
+   [(subscribe [:api.example/my-counter] :context context)])
  (fn [[value] [_ some-text]]
-   [value (str some-text "-" value)]))
+   {:value value
+    :str (str some-text "-" value)}))
