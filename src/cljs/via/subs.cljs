@@ -12,6 +12,7 @@
   (:require [via.events :refer [reg-event-via]]
             [via.endpoint :as via]
             [distantia.core :refer [patch]]
+            [utilis.fn :refer [fsafe]]
             [utilis.types.keyword :refer [->keyword]]
             [re-frame.core :refer [reg-sub-raw reg-event-db dispatch] :as re-frame]
             [reagent.ratom :refer [make-reaction]]
@@ -20,38 +21,38 @@
 
 (defonce ^:private subscriptions (atom #{}))
 
-(declare path via-subscribe via-dispose)
+(declare path remote-subscribe remote-dispose)
 
 (defmethod ig/init-key :via/subs
-  [_ {:keys [endpoint events]}]
-  (add-watch subscriptions :via/subs
+  [_ {:keys [endpoint]}]
+  (add-watch subscriptions :via.subs/subscriptions
              (fn [_key _ref old-value new-value]
                (let [[removed added _] (diff old-value new-value)]
-                 (doseq [s removed] (via-dispose endpoint s))
-                 (doseq [s added] (via-subscribe endpoint s)))))
-  (doseq [s @subscriptions] (via-subscribe endpoint s))
+                 (doseq [query-v removed] (remote-dispose endpoint query-v))
+                 (doseq [query-v added] (remote-subscribe endpoint query-v)))))
   {:endpoint endpoint
-   :events events
-   :sub-key (via/subscribe endpoint {:close #(doseq [s @subscriptions]
-                                               (via-dispose endpoint s))})})
+   :sub-key (via/subscribe endpoint {:open #(doseq [query-v @subscriptions]
+                                              (remote-subscribe endpoint query-v))})})
 
 (defmethod ig/halt-key! :via/subs
   [_ {:keys [endpoint sub-key]}]
+  (remove-watch subscriptions :via.subs/subscriptions)
+  (doseq [query-v @subscriptions] (remote-dispose endpoint query-v))
   (via/dispose endpoint sub-key))
 
 (defn subscribe
-  ([query-v]
-   (subscribe query-v nil))
-  ([[query-id & _ :as query-v] not-found]
-   (when-not (re-frame.registrar/get-handler :sub query-id)
-     (reg-sub-raw
-      query-id
-      (fn [db query-v]
-        (swap! subscriptions conj query-v)
-        (make-reaction
-         #(get-in @db (path query-v) not-found)
-         :on-dispose #(swap! subscriptions disj query-v)))))
-   (re-frame/subscribe query-v)))
+  [[query-id & _ :as query-v]]
+  (when-not (re-frame.registrar/get-handler :sub query-id)
+    (reg-sub-raw
+     query-id
+     (fn [db query-v]
+       (swap! subscriptions conj query-v)
+       (make-reaction
+        #(get-in @db (path query-v))
+        :on-dispose #(do
+                       (swap! subscriptions disj query-v)
+                       (dispatch [:via.subs.db/clear {:path (path query-v)}]))))))
+  (re-frame/subscribe query-v))
 
 (reg-event-via
  :via.subs.db/updated
@@ -76,12 +77,13 @@
   [query-v]
   [:via.subs/cache query-v])
 
-(defn- via-subscribe
+(defn- remote-subscribe
   [endpoint query-v]
   (via/send! endpoint [:via.subs/subscribe {:query-v query-v
-                                            :callback [:via.subs.db/updated]}]))
+                                            :callback [:via.subs.db/updated]}]
+             :failure-fn #(js/console.error ":via.subs/subscribe" (pr-str query-v) "failed" %)))
 
-(defn- via-dispose
+(defn- remote-dispose
   [endpoint query-v]
-  (via/send! endpoint [:via.subs/dispose {:query-v query-v}])
-  (dispatch [:via.subs.db/clear {:path (path query-v)}]))
+  (via/send! endpoint [:via.subs/dispose {:query-v query-v}]
+             :failure-fn #(js/console.error ":via.subs/dispose" (pr-str query-v) "failed" %)))

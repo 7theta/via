@@ -35,67 +35,63 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects merge
-                        {:endpoint (fn [] endpoint)
-                         :request (dissoc (:request %) :ring-request)
-                         :ring-request (:ring-request (:request %))
-                         :client-id (:client-id %)
-                         :client (get @clients (:client-id %))})
+       :before #(update % :coeffects merge {:endpoint (fn [] endpoint)
+                                            :client (get @clients (get-in % [:request :client-id]))
+                                            :request (:request %)})
        :after (fn [context]
-                (when-let [{:keys [client-id tag]} (get-in context [:effects :via/disconnect])]
-                  (disconnect! (fn [] endpoint) :client-id client-id :tag tag))
+                (if-let [{:keys [client-id tag]} (get-in context [:effects :via/disconnect])]
+                  (disconnect! (fn [] endpoint) :client-id client-id :tag tag)
+                  (when-let [client-id (get-in context [:request :client-id])]
+                    (when-let [replace-data (get-in context [:effects :via/replace-data])]
+                      (replace-data! (fn [] endpoint) client-id replace-data))
+                    (when-let [merge-data (get-in context [:effects :via/merge-data])]
+                      (merge-data! (fn [] endpoint) client-id merge-data))
 
-                (if-let [replace-data (get-in context [:effects :via/replace-data])]
-                  (replace-data! (fn [] endpoint) (:client-id context) replace-data)
-                  (when-let [merge-data (get-in context [:effects :via/merge-data])]
-                    (merge-data! (fn [] endpoint) (:client-id context) merge-data)))
-
-                (when-let [response (get-in context [:effects :via/reply])]
-                  (when (:request-id context)
-                    (send! (fn [] endpoint) response
-                           :type :reply
-                           :client-id (:client-id context)
-                           :params {:status (get-in context [:effects :via/status])
-                                    :request-id (:request-id context)})))
-
-                (let [add-tags (get-in context [:effects :via/add-tags])
-                      remove-tags (get-in context [:effects :via/remove-tags])
-                      replace-tags (get-in context [:effects :via/replace-tags])]
-                  (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
-                    (when-let [client-id (:client-id context)]
-                      (swap! clients update-in [client-id :tags]
-                             #(if (seq replace-tags)
-                                (set replace-tags)
-                                (cond-> (set %)
+                    (let [add-tags (get-in context [:effects :via/add-tags])
+                          remove-tags (get-in context [:effects :via/remove-tags])
+                          replace-tags (get-in context [:effects :via/replace-tags])]
+                      (when (or (seq add-tags) (seq remove-tags) (seq replace-tags))
+                        (swap! clients update-in [client-id :tags]
+                               #(cond-> (set %)
                                   add-tags (union (set add-tags))
-                                  remove-tags (difference (set remove-tags))))))))
+                                  remove-tags (difference (set remove-tags))
+                                  replace-tags ((constantly (set replace-tags)))))))
+
+                    (when-let [reply (get-in context [:effects :via/reply])]
+                      (send! (fn [] endpoint) reply
+                             :type :reply
+                             :client-id (get-in context [:request :client-id])
+                             :params {:status (get-in context [:effects :via/status])
+                                      :request-id (get-in context [:request :request-id])}))))
                 context))))
     (fn
       ([] endpoint)
       ([request]
-       (let [handle-event (fn [message data]
-                            (doseq [handler (->> @subscriptions
-                                                 vals
-                                                 (map message)
-                                                 (remove nil?))]
-                              (handler data)))]
+       (let [handle-event (fn [event-type event]
+                            (doseq [handler (->> @subscriptions vals (map event-type) (remove nil?))]
+                              (handler event)))]
          (with-channel request channel
            (if (websocket? channel)
-             (let [client-id (str (java.util.UUID/randomUUID))]
-               (handle-event :open {:client-id client-id :status :initial})
+             (let [client-id (get-in request [:headers "sec-websocket-key"])]
                (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
+               (handle-event :open {:client-id client-id :status :initial})
                (on-close channel
                          (fn [status]
                            (swap! clients dissoc client-id)
                            (handle-event :close {:client-id client-id :status status})))
                (on-receive channel
                            (fn [message]
-                             (handle-event
-                              :message
-                              (merge (decode message)
-                                     {:client-id client-id
-                                      :ring-request request})))))
+                             (handle-event :message (let [{:keys [payload request-id]} (decode message)]
+                                                      {:client-id client-id
+                                                       :request-id request-id
+                                                       :ring-request request
+                                                       :payload payload})))))
              (http/send! channel {:status 404} true))))))))
+
+(defmethod ig/halt-key! :via/endpoint
+  [_ endpoint]
+  (doseq [c (->> @(:clients (endpoint)) (map :channel) (remove nil?))]
+    (http/close c)))
 
 (defn subscribe
   [endpoint callbacks]
@@ -105,14 +101,12 @@
 
 (defn dispose
   [endpoint key]
-  (when-let [subs (:subscriptions ((fsafe endpoint)))]
-    (swap! subs dissoc key)))
+  (swap! (:subscriptions (endpoint)) dissoc key))
 
 (defn send!
-  "Asynchronously sends `event` to the client for `client-id`"
+  "Asynchronously sends `message` to the client for `client-id`"
   [endpoint message & {:keys [type client-id tag params]
                        :or {type :message}}]
-  {:pre [(xor client-id tag)]}
   (let [encoded-message (encode (merge {:type type :payload message} params))
         send-to-channel! #(http/send! % encoded-message false)]
     (if tag
@@ -125,16 +119,14 @@
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
   [endpoint message]
-  (doseq [c (keys @(:clients (endpoint)))]
-    (send! endpoint message :client-id c)))
+  (doseq [client-id (keys @(:clients (endpoint)))]
+    (send! endpoint message :client-id client-id)))
 
 (defn disconnect!
   [endpoint & {:keys [client-id tag]}]
-  {:pre [(xor client-id tag)]}
   (doseq [channel (if tag
                     (channels-by-tag endpoint tag)
-                    [(get-in @(:clients (endpoint))
-                             [client-id :channel])])]
+                    [(get-in @(:clients (endpoint)) [client-id :channel])])]
     (http/close channel)))
 
 ;;; Private
