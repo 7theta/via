@@ -18,6 +18,4 @@
    :before (fn [{:keys [coeffects event] :as context}]
              (let [effects (handler-fn coeffects event)
                    status (get effects :via/status 200)]
-               (-> context
-                   (update :effects merge effects)
-                   (assoc :status status))))))
+               (update context :effects merge effects)))))

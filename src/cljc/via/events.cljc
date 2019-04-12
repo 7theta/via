@@ -17,15 +17,14 @@
 
 (defonce ^:private handlers (atom {}))
 
-(declare handle-request)
-
+(declare handle-message)
 
 ;;; Public
 
 (defmethod ig/init-key :via/events
   [_ {:keys [endpoint]}]
   {:endpoint endpoint
-   :sub-key (subscribe endpoint {:message (partial handle-request endpoint)})})
+   :sub-key (subscribe endpoint {:message (partial handle-message endpoint)})})
 
 (defmethod ig/halt-key! :via/events
   [_ {:keys [endpoint sub-key]}]
@@ -35,23 +34,14 @@
   ([id handler]
    (reg-event-via id nil handler))
   ([id interceptors handler]
-   (swap! handlers assoc id {:queue (-> [#'endpoint/interceptor]
-                                        (concat interceptors)
-                                        (concat [(via-interceptors/handler id handler)]))
+   (swap! handlers assoc id {:queue (concat [#'endpoint/interceptor] interceptors [(via-interceptors/handler id handler)])
                              :stack []})
    id))
 
 ;;; Implementation
 
-(defn- handle-request
-  [endpoint {:keys [payload request-id] :as request}]
+(defn- handle-message
+  [endpoint {:keys [payload] :as request}]
   (if-let [context (get @handlers (first payload))]
-    (-> context
-        (merge {:event payload
-                :request request}
-               (select-keys request [:client-id :request-id]))
-        interceptors/run)
-    (throw
-     (ex-info
-      (str "Unhandled request: " (pr-str (:payload request)))
-      {:payload (:payload request)}))))
+    (interceptors/run (assoc context :event payload :request request))
+    (throw (ex-info (str ":via/events Unhandled request" (pr-str (:payload request))) {:request request}))))
