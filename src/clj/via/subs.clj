@@ -61,7 +61,7 @@
     (when-let [signal (binding [signum/*context* {:endpoint endpoint :request request}]
                         (signum/subscribe query-v))]
       (let [client-id (:client-id request)
-            watch-key (keyword (str query-v "-" client-id))
+            watch-key (str ":via-" query-v "(" client-id ")")
             send-value! #(try
                            (via/send! endpoint (conj (vec callback) {:query-v query-v :change %})
                                       :client-id client-id)

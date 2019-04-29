@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "2.1.0"
+(defproject com.7theta/via "3.0.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -25,13 +25,15 @@
                  [com.cognitect/transit-clj "0.8.313" :exclusions [com.fasterxml.jackson.core/jackson-core]]
                  [http-kit "2.3.0"]
 
-                 [com.7theta/signum "1.1.1"]
+                 [com.7theta/signum "2.0.0"]
                  [com.7theta/distantia "0.2.1"]
 
-                 [com.7theta/utilis "1.2.0"]
+                 [com.7theta/utilis "1.3.0"]
                  [integrant "0.7.0"]]
-  :source-paths ["src/clj" "src/cljs" "src/cljc"]
-  :profiles {:dev {:source-paths ["dev/clj" "example/src/clj"]
+  :source-paths ["src/clj" "src/cljs" "src/cljc"
+                 "checkouts/signum/src/signum"]
+  :profiles {:dev {:source-paths ["dev/clj" "example/src/clj"
+                                  "checkouts/signum/src/signum"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
                    :dependencies [[ring/ring-core "1.7.1" :exclusions [ring/ring-codec]]
