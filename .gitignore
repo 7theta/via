@@ -7,6 +7,8 @@ pom.xml.asc
 lib/
 classes/
 target/
+example/resources/public/js/compiled/
+figwheel_server.log
 out/
 checkouts/
 .lein-deps-sum
@@ -14,8 +16,11 @@ checkouts/
 .lein-plugins/
 .lein-failures
 .nrepl-port
-example/resources/public/js/compiled
-figwheel_server.log
+
+### shadow-cljs ###
+.shadow-cljs
+node_modules
+package-lock.json
 
 ### Emacs ###
 # -*- mode: gitignore; -*-

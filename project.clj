@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "3.0.0"
+(defproject com.7theta/via "3.1.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -18,22 +18,19 @@
 
                  [reagent "0.8.1"]
                  [re-frame "0.10.6"]
-                 [haslett "0.1.2" :exclusions [org.clojure/core.async]]
+                 [haslett "0.1.6"]
 
                  [buddy/buddy-auth "2.1.0" :exclusions [clout]]
                  [buddy/buddy-hashers "1.3.0"]
                  [com.cognitect/transit-clj "0.8.313" :exclusions [com.fasterxml.jackson.core/jackson-core]]
-                 [http-kit "2.3.0"]
+                 [http-kit "2.4.0-alpha3"]
 
                  [com.7theta/signum "2.0.0"]
                  [com.7theta/distantia "0.2.1"]
 
                  [com.7theta/utilis "1.3.0"]
                  [integrant "0.7.0"]]
-  :source-paths ["src/clj" "src/cljs" "src/cljc"
-                 "checkouts/signum/src/signum"]
-  :profiles {:dev {:source-paths ["dev/clj" "example/src/clj"
-                                  "checkouts/signum/src/signum"]
+  :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
                    :dependencies [[ring/ring-core "1.7.1" :exclusions [ring/ring-codec]]
@@ -41,28 +38,11 @@
                                   [ring/ring-anti-forgery "1.3.0"]
                                   [compojure "1.6.1"]
 
+                                  [com.google.javascript/closure-compiler-unshaded "v20190325"]
+                                  [org.clojure/google-closure-library "0.0-20190213-2033d5d9"]
                                   [binaryage/devtools "0.9.10"]
-                                  [figwheel-sidecar "0.5.18"]
-                                  [cider/piggieback "0.4.0"]
-                                  [org.clojure/tools.nrepl "0.2.13"]
-                                  [integrant/repl "0.3.1"]
-                                  [day8.re-frame/re-frame-10x "0.4.0"]]
-                   :figwheel {:server-logfile false}
-                   :repl-options {:nrepl-middleware [cider.piggieback/wrap-cljs-repl]}
-                   :plugins [[lein-cljsbuild "1.1.7" :exclusions [org.apache.commons/commons-compress]]
-                             [lein-figwheel "0.5.14" :exclusions [org.clojure/clojure]]]}}
-  :cljsbuild {:builds [{:id "dev"
-                        :source-paths ["src/cljs" "src/cljc" "example/src/cljs"]
-                        :figwheel {:on-jsload "example.core/mount-root"}
-                        :compiler {:main example.core
-                                   :output-to "example/resources/public/js/compiled/app.js"
-                                   :output-dir "example/resources/public/js/compiled/out"
-                                   :asset-path "js/compiled/out"
-                                   :source-map-timestamp true
-                                   :preloads [devtools.preload
-                                              day8.re-frame-10x.preload]
-                                   :closure-defines {"re_frame.trace.trace_enabled_QMARK_" true}
-                                   :external-config {:devtools/config {:features-to-install :all}}}}]}
+                                  [thheller/shadow-cljs "2.8.36"]
+                                  [integrant/repl "0.3.1"]]}}
   :prep-tasks ["compile"]
   :scm {:name "git"
         :url "https://github.com/7theta/via"})

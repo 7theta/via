@@ -6,7 +6,7 @@
             [reagent.core :as reagent]
             [re-frame.core :as re-frame]))
 
-(defn mount-root []
+(defn ^:dev/after-load mount-root []
   (re-frame/clear-subscription-cache!)
   (reagent/render [views/main-panel] (.getElementById js/document "app")))
 

@@ -15,6 +15,7 @@
             [utilis.fn :refer [fsafe]]
             [utilis.types.keyword :refer [->keyword]]
             [re-frame.core :refer [reg-sub-raw reg-event-db dispatch] :as re-frame]
+            [re-frame.subs :refer [query->reaction]]
             [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
             [clojure.data :refer [diff]]))
@@ -30,6 +31,9 @@
                (let [[removed added _] (diff old-value new-value)]
                  (doseq [query-v removed] (remote-dispose endpoint query-v))
                  (doseq [query-v added] (remote-subscribe endpoint query-v)))))
+  (add-watch query->reaction :via.subs/subscription-cache
+             (fn [_key _ref old-value new-value]
+               (reset! subscriptions (->> new-value keys (map first) (filter @subscriptions) set))))
   {:endpoint endpoint
    :sub-key (via/subscribe endpoint {:open #(doseq [query-v @subscriptions]
                                               (remote-subscribe endpoint query-v))})})
@@ -47,11 +51,7 @@
      query-id
      (fn [db query-v]
        (swap! subscriptions conj query-v)
-       (make-reaction
-        #(get-in @db (path query-v))
-        :on-dispose #(do
-                       (swap! subscriptions disj query-v)
-                       (dispatch [:via.subs.db/clear {:path (path query-v)}]))))))
+       (make-reaction #(get-in @db (path query-v))))))
   (re-frame/subscribe query-v))
 
 (reg-event-via
@@ -81,9 +81,9 @@
   [endpoint query-v]
   (via/send! endpoint [:via.subs/subscribe {:query-v query-v
                                             :callback [:via.subs.db/updated]}]
-             :failure-fn #(js/console.error ":via.subs/subscribe" (pr-str query-v) "failed" %)))
+             :failure-fn #(js/console.warn ":via.subs/subscribe" (pr-str query-v) "failed" (pr-str %))))
 
 (defn- remote-dispose
   [endpoint query-v]
   (via/send! endpoint [:via.subs/dispose {:query-v query-v}]
-             :failure-fn #(js/console.error ":via.subs/dispose" (pr-str query-v) "failed" %)))
+             :failure-fn #(js/console.warn ":via.subs/dispose" (pr-str query-v) "failed" (pr-str %))))

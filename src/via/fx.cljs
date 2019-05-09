@@ -59,5 +59,5 @@
                       :failure-fn #(dispatch (conj (vec on-failure) (:payload %)))
                       :timeout-fn (if on-timeout
                                     #(dispatch (conj (vec on-timeout) (:payload %)))
-                                    #(js/console.error ":via/dispatch timeout" event)))
+                                    #(js/console.warn ":via/dispatch timeout" event)))
            (via/send! endpoint event)))))))

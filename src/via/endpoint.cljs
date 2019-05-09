@@ -67,8 +67,10 @@
        (let [stream (ws/connect (append-query-params (:url endpoint) params)
                                 {:format fmt/transit})
              control-ch (chan)]
+         (reset! (:control-ch endpoint) control-ch)
          (go
            (let [{:keys [close-status source sink] :as stream} (<! stream)]
+             (reset! (:stream endpoint) stream)
              (handle-event endpoint :open {:status :initial})
              (loop []
                (alt!
@@ -78,13 +80,12 @@
                            (case (:type message)
                              :message (handle-event endpoint :message message)
                              :reply (handle-reply endpoint message))
-                           (js/console.error "via: nil message from server"))
+                           (js/console.warn "via: nil message from server"))
                          (recur))
                  close-status ([status]
-                               (js/console.error "via: connection closed" status)
-                               (handle-event endpoint :close (merge {:status :forced} status)))))))
-         (reset! (:stream endpoint) stream)
-         (reset! (:control-ch endpoint) control-ch))))))
+                               (js/console.warn "via: connection closed" (pr-str status))
+                               (reset! (:stream endpoint) nil)
+                               (handle-event endpoint :close (merge {:status :forced} status))))))))))))
 
 (defn disconnect!
   [endpoint]
@@ -97,8 +98,7 @@
 
 (defn connected?
   [endpoint]
-  (when-let [stream (poll! @(:stream (endpoint)))]
-    (nil? (poll! (:close-status stream)))))
+  (boolean @(:stream (endpoint))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -122,7 +122,7 @@
       (let [endpoint (endpoint)
             do-send (fn [message params]
                       (if-let [stream @(:stream endpoint)]
-                        (go (>! (:sink (<! stream))
+                        (go (>! (:sink stream)
                                 (merge {:type type
                                         :payload message} params)))
                         (throw (js/Error. ":via/endpoint not connected"))))]
@@ -136,7 +136,7 @@
                                      :timer (js/setTimeout (fsafe timeout-fn) timeout)})
             (do-send message {:request-id request-id
                               :timeout timeout}))))
-      (js/console.error ":via/endpoint attempting to send nil message"))))
+      (js/console.warn ":via/endpoint attempting to send nil message"))))
 
 (defn- handle-event
   [endpoint type data]
@@ -150,7 +150,7 @@
       (js/clearTimeout (:timer request))
       ((fsafe ((if (= 200 (:status reply)) :success-fn :failure-fn) request))
        (select-keys reply [:status :payload])))
-    (js/console.error ":via/endpoint reply with invalid request-id" (:request-id reply))))
+    (js/console.warn ":via/endpoint reply with invalid request-id" (:request-id reply))))
 
 (defn- default-via-url
   []
