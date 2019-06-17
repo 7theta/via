@@ -14,9 +14,8 @@
             [distantia.core :refer [patch]]
             [utilis.fn :refer [fsafe]]
             [utilis.types.keyword :refer [->keyword]]
-            [re-frame.core :refer [reg-sub-raw reg-event-db dispatch] :as re-frame]
+            [re-frame.core :refer [reg-sub reg-event-db dispatch] :as re-frame]
             [re-frame.subs :refer [query->reaction]]
-            [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
             [clojure.data :refer [diff]]))
 
@@ -29,8 +28,11 @@
   (add-watch subscriptions :via.subs/subscriptions
              (fn [_key _ref old-value new-value]
                (let [[removed added _] (diff old-value new-value)]
-                 (doseq [query-v removed] (remote-dispose endpoint query-v))
-                 (doseq [query-v added] (remote-subscribe endpoint query-v)))))
+                 (doseq [query-v removed]
+                   (re-frame.registrar/clear-handlers :sub (first query-v))
+                   (remote-dispose endpoint query-v))
+                 (doseq [query-v added]
+                   (remote-subscribe endpoint query-v)))))
   (add-watch query->reaction :via.subs/subscription-cache
              (fn [_key _ref old-value new-value]
                (reset! subscriptions (->> new-value keys (map first) (filter @subscriptions) set))))
@@ -47,12 +49,18 @@
 (defn subscribe
   [[query-id & _ :as query-v]]
   (when-not (re-frame.registrar/get-handler :sub query-id)
-    (reg-sub-raw
+    (reg-sub
      query-id
      (fn [db query-v]
        (swap! subscriptions conj query-v)
-       (make-reaction #(get-in @db (path query-v))))))
+       (get-in db (path query-v)))))
   (re-frame/subscribe query-v))
+
+;;; Private
+
+(defn- path
+  [query-v]
+  [:via.subs/cache query-v])
 
 (reg-event-via
  :via.subs.db/updated
@@ -71,12 +79,6 @@
  (fn [db [_ {:keys [path]}]]
    (update-in db (drop-last path) dissoc (last path))))
 
-;;; Private
-
-(defn- path
-  [query-v]
-  [:via.subs/cache query-v])
-
 (defn- remote-subscribe
   [endpoint query-v]
   (via/send! endpoint [:via.subs/subscribe {:query-v query-v
@@ -86,4 +88,5 @@
 (defn- remote-dispose
   [endpoint query-v]
   (via/send! endpoint [:via.subs/dispose {:query-v query-v}]
-             :failure-fn #(js/console.warn ":via.subs/dispose" (pr-str query-v) "failed" (pr-str %))))
+             :failure-fn #(js/console.warn ":via.subs/dispose" (pr-str query-v) "failed" (pr-str %)))
+  (dispatch [:via.subs.db/clear {:path (path query-v)}]))

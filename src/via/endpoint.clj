@@ -56,13 +56,13 @@
                                   add-tags (union (set add-tags))
                                   remove-tags (difference (set remove-tags))
                                   replace-tags ((constantly (set replace-tags)))))))
-
                     (when-let [reply (get-in context [:effects :via/reply])]
-                      (send! (fn [] endpoint) reply
-                             :type :reply
-                             :client-id (get-in context [:request :client-id])
-                             :params {:status (get-in context [:effects :via/status])
-                                      :request-id (get-in context [:request :request-id])}))))
+                      (when-let [request-id (get-in context [:request :request-id])]
+                        (send! (fn [] endpoint) reply
+                               :type :reply
+                               :client-id (get-in context [:request :client-id])
+                               :params {:status (get-in context [:effects :via/status])
+                                        :request-id request-id})))))
                 context))))
     (fn
       ([] endpoint)

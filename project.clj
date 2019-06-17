@@ -8,12 +8,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "3.1.0"
+(defproject com.7theta/via "3.2.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.10.0"]
+  :dependencies [[org.clojure/clojure "1.10.1"]
                  [org.clojure/clojurescript "1.10.520"]
 
                  [reagent "0.8.1"]
@@ -38,10 +38,10 @@
                                   [ring/ring-anti-forgery "1.3.0"]
                                   [compojure "1.6.1"]
 
-                                  [com.google.javascript/closure-compiler-unshaded "v20190325"]
+                                  [com.google.javascript/closure-compiler-unshaded "v20190528"]
                                   [org.clojure/google-closure-library "0.0-20190213-2033d5d9"]
                                   [binaryage/devtools "0.9.10"]
-                                  [thheller/shadow-cljs "2.8.36"]
+                                  [thheller/shadow-cljs "2.8.39"]
                                   [integrant/repl "0.3.1"]]}}
   :prep-tasks ["compile"]
   :scm {:name "git"
