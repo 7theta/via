@@ -112,9 +112,8 @@
     (if tag
       (doseq [channel (channels-by-tag endpoint tag)]
         (send-to-channel! channel))
-      (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
-        (send-to-channel! channel)
-        (throw (ex-info "Client not connected" {:client-id client-id}))))))
+      (when-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
+        (send-to-channel! channel)))))
 
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
