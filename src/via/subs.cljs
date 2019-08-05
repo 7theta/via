@@ -29,7 +29,8 @@
              (fn [_key _ref old-value new-value]
                (let [[removed added _] (diff old-value new-value)]
                  (doseq [query-v removed]
-                   (re-frame.registrar/clear-handlers :sub (first query-v))
+                   (when-not (->> @subscriptions (filter #(= (first %) (first query-v))) not-empty)
+                     (re-frame.registrar/clear-handlers :sub (first query-v)))
                    (remote-dispose endpoint query-v))
                  (doseq [query-v added]
                    (remote-subscribe endpoint query-v)))))
@@ -43,6 +44,7 @@
 (defmethod ig/halt-key! :via/subs
   [_ {:keys [endpoint sub-key]}]
   (remove-watch subscriptions :via.subs/subscriptions)
+  (remove-watch query->reaction :via.subs/subscription-cache)
   (doseq [query-v @subscriptions] (remote-dispose endpoint query-v))
   (via/dispose endpoint sub-key))
 
