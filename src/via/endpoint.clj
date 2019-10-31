@@ -10,7 +10,7 @@
 
 (ns via.endpoint
   (:require [signum.interceptors :refer [->interceptor]]
-            [org.httpkit.server :refer [with-channel on-close on-receive
+            [org.httpkit.server :refer [as-channel on-close on-receive
                                         sec-websocket-accept websocket?] :as http]
             [cognitect.transit :as transit]
             [utilis.fn :refer [fsafe]]
@@ -69,24 +69,26 @@
       ([request]
        (let [handle-event (fn [event-type event]
                             (doseq [handler (->> @subscriptions vals (map event-type) (remove nil?))]
-                              (handler event)))]
-         (with-channel request channel
-           (if (websocket? channel)
-             (let [client-id (get-in request [:headers "sec-websocket-key"])]
-               (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
-               (handle-event :open {:client-id client-id :status :initial})
-               (on-close channel
-                         (fn [status]
-                           (swap! clients dissoc client-id)
-                           (handle-event :close {:client-id client-id :status status})))
-               (on-receive channel
-                           (fn [message]
-                             (handle-event :message (let [{:keys [payload request-id]} (decode message)]
-                                                      {:client-id client-id
-                                                       :request-id request-id
-                                                       :ring-request request
-                                                       :payload payload})))))
-             (http/send! channel {:status 404} true))))))))
+                              (handler event)))
+             client-id (get-in request [:headers "sec-websocket-key"])]
+         (if-not (and (:websocket? request) (not-empty client-id))
+           {:status 404}
+           (as-channel request
+                       {:on-open
+                        (fn [channel]
+                          (swap! clients assoc client-id {:channel channel :ring-request request :data {}})
+                          (handle-event :open {:client-id client-id :status :initial}))
+                        :on-close
+                        (fn [channel status]
+                          (swap! clients dissoc client-id)
+                          (handle-event :close {:client-id client-id :status status}))
+                        :on-receive
+                        (fn [channel message]
+                          (handle-event :message (let [{:keys [payload request-id]} (decode message)]
+                                                   {:client-id client-id
+                                                    :request-id request-id
+                                                    :ring-request request
+                                                    :payload payload})))})))))))
 
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
