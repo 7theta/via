@@ -51,6 +51,12 @@
           :via/status 200}
          {:via/reply {:error :invalid-credentials}
           :via/status 403})))
+    (reg-event-via
+     :via/logout
+     (fn [context _]
+       {:via/replace-data {:token nil}
+        :via/reply true
+        :via/status 200}))
     authenticator))
 
 (defn authenticate

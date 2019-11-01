@@ -1,3 +1,3 @@
-(ns example.db)
+(ns via.example.db)
 
 (def default-db {})

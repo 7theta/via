@@ -8,13 +8,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "3.2.5"
+(defproject com.7theta/via "3.3.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[reagent "0.8.1"]
-                 [re-frame "0.10.9"]
+  :dependencies [[re-frame "0.10.9"]
                  [haslett "0.1.6"]
 
                  [buddy/buddy-auth "2.2.0" :exclusions [clout]]
@@ -27,10 +26,10 @@
                  [ring/ring-anti-forgery "1.3.0"]
                  [compojure "1.6.1"]
 
-                 [com.7theta/signum "2.2.0"]
-                 [com.7theta/distantia "0.2.1"]
+                 [com.7theta/signum "2.2.1"]
+                 [com.7theta/distantia "0.2.2"]
 
-                 [com.7theta/utilis "1.7.1"]
+                 [com.7theta/utilis "1.8.0"]
                  [integrant "0.7.0"]]
   :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
@@ -40,7 +39,7 @@
                                   [com.google.javascript/closure-compiler-unshaded "v20191027"]
                                   [org.clojure/google-closure-library "0.0-20190213-2033d5d9"]
                                   [binaryage/devtools "0.9.10"]
-                                  [thheller/shadow-cljs "2.8.68"]
+                                  [thheller/shadow-cljs "2.8.69"]
                                   [integrant/repl "0.3.1"]]}}
   :prep-tasks ["compile"]
   :scm {:name "git"

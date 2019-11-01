@@ -11,7 +11,7 @@
 (ns dev
   "Tools for interactive development with the REPL. This file should
   not be included in a production build of the application."
-  (:require [example.config :refer [config]]
+  (:require [via.example.config :refer [config]]
 
             [integrant.core :as ig]
 

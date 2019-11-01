@@ -1,13 +1,13 @@
-(ns example.config
-  (:require [example.events]
-            [example.subs]
+(ns via.example.config
+  (:require [via.example.events]
+            [via.example.subs]
             [integrant.core :as ig]))
 
 ;;; Public
 
 (def config
   {:via/authenticator
-   {:query-fn (ig/ref [:example/user-store])}
+   {:query-fn (ig/ref [:via.example/user-store])}
    :via/endpoint
    {}
    :via/events
@@ -15,14 +15,14 @@
    :via/subs
    {:endpoint (ig/ref :via/endpoint)}
    :via/http-server
-   {:ring-handler (ig/ref :example/ring-handler)}
+   {:ring-handler (ig/ref :via.example/ring-handler)}
 
-   :example/user-store
+   :via.example/user-store
    nil
 
-   :example/ring-handler
+   :via.example/ring-handler
    {:via-handler (ig/ref :via/endpoint)}
 
-   :example/broadcaster
+   :via.example/broadcaster
    {:frequency 5
     :via-endpoint (ig/ref :via/endpoint)}})

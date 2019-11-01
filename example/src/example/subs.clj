@@ -1,4 +1,4 @@
-(ns example.subs
+(ns via.example.subs
   (:require [via.endpoint :as via]
             [via.authenticator :as auth]
             [signum.atom :as s]

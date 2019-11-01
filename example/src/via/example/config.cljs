@@ -1,9 +1,9 @@
-(ns example.config
+(ns via.example.config
   (:require [via.endpoint]
             [via.events]
             [via.subs]
             [via.fx]
-            [example.test-client]
+            [via.example.test-client]
             [integrant.core :as ig]
             [via.endpoint :as via]))
 
@@ -22,5 +22,5 @@
    :via/fx
    {:endpoint (ig/ref :via/endpoint)}
 
-   :example/test-client
+   :via.example/test-client
    {:endpoint (ig/ref :via/endpoint)}})

@@ -1,8 +1,8 @@
-(ns example.core
-  (:require [example.app :refer [app]]
-            [example.events]
-            [example.subs]
-            [example.views :as views]
+(ns via.example.core
+  (:require [via.example.app :refer [app]]
+            [via.example.events]
+            [via.example.subs]
+            [via.example.views :as views]
             [reagent.core :as reagent]
             [re-frame.core :as re-frame]))
 

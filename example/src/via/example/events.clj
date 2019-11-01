@@ -1,4 +1,4 @@
-(ns example.events
+(ns via.example.events
   (:require [via.events :refer [reg-event-via]]
             [via.authenticator :as auth]))
 

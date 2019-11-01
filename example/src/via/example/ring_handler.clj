@@ -1,4 +1,4 @@
-(ns example.ring-handler
+(ns via.example.ring-handler
   (:require [via.defaults :refer [default-via-endpoint]]
             [compojure.core :as compojure :refer [GET POST]]
             [compojure.route :as route]
@@ -6,7 +6,7 @@
             [ring.middleware.defaults :as ring-defaults]
             [integrant.core :as ig]))
 
-(defmethod ig/init-key :example/ring-handler [_ {:keys [via-handler]}]
+(defmethod ig/init-key :via.example/ring-handler [_ {:keys [via-handler]}]
   (-> (compojure/routes
        (GET "/" req-req (response/content-type
                          (response/resource-response "public/index.html")
