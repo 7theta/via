@@ -16,6 +16,7 @@
             [utilis.types.keyword :refer [->keyword]]
             [re-frame.core :refer [reg-sub reg-event-db dispatch] :as re-frame]
             [re-frame.subs :refer [query->reaction]]
+            [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
             [clojure.data :refer [diff]]))
 
@@ -49,14 +50,19 @@
   (via/dispose endpoint sub-key))
 
 (defn subscribe
-  [[query-id & _ :as query-v]]
-  (when-not (re-frame.registrar/get-handler :sub query-id)
-    (reg-sub
-     query-id
-     (fn [db query-v]
-       (swap! subscriptions conj query-v)
-       (get-in db (path query-v)))))
-  (re-frame/subscribe query-v))
+  ([query-v] (subscribe query-v nil))
+  ([[query-id & _ :as query-v] default]
+   (let []
+     (when-not (re-frame.registrar/get-handler :sub query-id)
+       (reg-sub
+        query-id
+        (fn [db query-v]
+          (swap! subscriptions conj query-v)
+          (get-in db (path query-v)))))
+     (make-reaction #(let [sub-value @(re-frame/subscribe query-v)]
+                       (if (get @subscriptions query-v) ; remote subscription
+                         (if (:updated sub-value) (:value sub-value) default)
+                         (or sub-value default)))))))
 
 ;;; Private
 
@@ -72,9 +78,11 @@
 (reg-event-db
  :via.subs.db/write
  (fn [db [_ {:keys [path change]}]]
-   (if (= :v (first change))
-     (assoc-in db path (second change))
-     (update-in db path patch (second change)))))
+   (let [now (js/Date.)]
+     (-> (if (= :v (first change))
+           (assoc-in db (conj path :value) (second change))
+           (update-in db (conj path :value) patch (second change)))
+         (assoc-in (conj path :updated) (.getTime (js/Date.)))))))
 
 (reg-event-db
  :via.subs.db/clear

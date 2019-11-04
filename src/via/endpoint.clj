@@ -133,13 +133,13 @@
 ;;; Private
 
 (defn- encode
-  [data]
+  [^String data]
   (let [out (ByteArrayOutputStream. 4096)]
     (transit/write (transit/writer out :json) data)
     (.toString out)))
 
 (defn- decode
-  [data]
+  [^String data]
   (let [in (ByteArrayInputStream. (.getBytes data))]
     (transit/read (transit/reader in :json))))
 
