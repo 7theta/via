@@ -62,7 +62,7 @@
      (make-reaction #(let [sub-value @(re-frame/subscribe query-v)]
                        (if (get @subscriptions query-v) ; remote subscription
                          (if (:updated sub-value) (:value sub-value) default)
-                         (or sub-value default)))))))
+                         (if (nil? sub-value) default sub-value)))))))
 
 ;;; Private
 
