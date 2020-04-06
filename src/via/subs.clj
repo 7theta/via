@@ -86,6 +86,5 @@
   ([endpoint client-id query-v]
    (when-let [{:keys [signal watch-key]} (get @subscriptions [query-v client-id])]
      (remove-watch signal watch-key)
-     (signum/dispose signal)
      (swap! subscriptions dissoc [query-v client-id])
      true)))

@@ -3,7 +3,7 @@
             [via.example.events]
             [via.example.subs]
             [via.example.views :as views]
-            [reagent.core :as reagent]
+            [reagent.dom :as reagent]
             [re-frame.core :as re-frame]))
 
 (defn ^:dev/after-load mount-root []
