@@ -10,15 +10,19 @@
 
 (ns via.http-server
   (:require [org.httpkit.server :as http]
+            [utilis.fn :refer [fsafe]]
             [integrant.core :as ig]))
 
 (defmethod ig/init-key :via/http-server [_ opts]
   (let [ring-handler (atom (delay (:ring-handler opts)))]
     {:ring-handler ring-handler
-     :stop-server (http/run-server (fn [req] (@@ring-handler req)) (dissoc opts :ring-handler))}))
+     :http-server (http/run-server (fn [req] ((fsafe @@ring-handler) req))
+                                   (-> (dissoc opts :ring-handler)
+                                       (assoc :legacy-return-value? false)))}))
 
-(defmethod ig/halt-key! :via/http-server [_ {:keys [stop-server]}]
-  (stop-server))
+(defmethod ig/halt-key! :via/http-server [_ {:keys [http-server]}]
+  (when-let [stopping (http/server-stop! http-server {:timeout 1000})]
+    @stopping)) ; Wait for server to stop
 
 (defmethod ig/suspend-key! :via/http-server [_ {:keys [ring-handler]}]
   (reset! ring-handler (promise)))
