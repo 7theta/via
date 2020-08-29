@@ -181,7 +181,8 @@
 (defn- default-via-url
   []
   (when-let [location (.-location js/window)]
-    (str "ws://" (.-host location) default-via-endpoint)))
+    (str (if (= "http:" (.-protocol location)) "ws://" "wss://")
+         (.-host location) default-via-endpoint)))
 
 (defn- append-query-params
   [url query-params]
