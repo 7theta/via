@@ -22,10 +22,11 @@
 
 (defonce ^:private subscriptions (atom #{}))
 
-(declare path remote-subscribe remote-dispose)
+(declare path remote-subscribe remote-dispose reconnect-subs!)
 
 (defmethod ig/init-key :via/subs
-  [_ {:keys [endpoint]}]
+  [_ {:keys [endpoint auto-connect-subs]
+      :or {auto-connect-subs true}}]
   (add-watch subscriptions :via.subs/subscriptions
              (fn [_key _ref old-value new-value]
                (let [[removed added _] (diff old-value new-value)]
@@ -38,16 +39,16 @@
   (add-watch query->reaction :via.subs/subscription-cache
              (fn [_key _ref old-value new-value]
                (reset! subscriptions (->> new-value keys (map first) (filter @subscriptions) set))))
-  {:endpoint endpoint
-   :sub-key (via/subscribe endpoint {:open #(doseq [query-v @subscriptions]
-                                              (remote-subscribe endpoint query-v))})})
+  (merge {:endpoint endpoint}
+         (when auto-connect-subs
+           {:sub-key (via/subscribe endpoint {:open (reconnect-subs! endpoint)})})))
 
 (defmethod ig/halt-key! :via/subs
   [_ {:keys [endpoint sub-key]}]
   (remove-watch subscriptions :via.subs/subscriptions)
   (remove-watch query->reaction :via.subs/subscription-cache)
   (doseq [query-v @subscriptions] (remote-dispose endpoint query-v))
-  (via/dispose endpoint sub-key))
+  (when sub-key (via/dispose endpoint sub-key)))
 
 (defn subscribe
   ([query-v] (subscribe query-v nil))
@@ -63,6 +64,11 @@
                        (if (get @subscriptions query-v) ; remote subscription
                          (if (:updated sub-value) (:value sub-value) default)
                          (if (nil? sub-value) default sub-value)))))))
+
+(defn reconnect-subs!
+  [endpoint]
+  (doseq [query-v @subscriptions]
+    (remote-subscribe endpoint query-v)))
 
 ;;; Private
 
