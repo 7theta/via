@@ -7,7 +7,8 @@
 
 (def config
   {:via/authenticator
-   {:query-fn (ig/ref [:via.example/user-store])}
+   {:endpoint (ig/ref :via/endpoint)
+    :query-fn (ig/ref [:via.example/user-store])}
    :via/endpoint
    {}
    :via/events

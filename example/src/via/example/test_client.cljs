@@ -8,8 +8,7 @@
   {:endpoint endpoint
    :sub-key (subscribe endpoint
                        {:open #(js/console.log "WebSocket Connected" (pr-str %))
-                        :close #(do (js/console.log "WebSocket Disconnected" (pr-str %))
-                                    (dispatch [:via.example/logout]))})})
+                        :close #(js/console.log "WebSocket Disconnected" (pr-str %))})})
 
 (defmethod ig/halt-key! :via.example/test-client
   [_ {:keys [endpoint sub-key]}]

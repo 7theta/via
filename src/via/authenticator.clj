@@ -10,6 +10,7 @@
 
 (ns via.authenticator
   (:require [via.events :refer [reg-event-via]]
+            [via.endpoint :as via]
             [signum.interceptors :refer [->interceptor]]
             [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
@@ -26,16 +27,26 @@
 ;; ':id' and ':password' (hashed) keys or a nil.
 ;; If a secret is not provided, a random secret is generated on initialization.
 
-(defmethod ig/init-key :via/authenticator [_ {:keys [query-fn secret]
-                                              :or {secret (bn/random-bytes 32)}}]
-  (let [authenticator {:query-fn query-fn :secret secret}]
+(def default-secret (bn/random-bytes 32))
+
+(defmethod ig/init-key :via/authenticator [_ {:keys [query-fn secret endpoint]
+                                              :or {secret default-secret}}]
+  (let [authenticator {:query-fn query-fn :secret secret :endpoint endpoint}
+        sub-key (via/subscribe endpoint
+                               {:connection-context-changed
+                                (fn [connection-context]
+                                  (let [{:keys [token]} connection-context]
+                                    {:via/replace-tags
+                                     (when-let [uid (:id (validate-token authenticator token))]
+                                       #{uid})}))})
+        authenticator (merge authenticator {:sub-key sub-key})]
     (alter-var-root
      #'interceptor
      (constantly
       (->interceptor
        :id :via.authenticator/interceptor
        :before (fn [context]
-                 (let [token (get-in context [:coeffects :client :data :token])]
+                 (let [token (get-in context [:coeffects :client :connection-context :token])]
                    (if (validate-token authenticator token)
                      context
                      (assoc context
@@ -46,7 +57,7 @@
      :via/id-password-login
      (fn [context [_ {:keys [id password]}]]
        (if-let [user (authenticate authenticator id password)]
-         {:via/replace-data {:token (:token user)}
+         {:via/replace-connection-context {:token (:token user)}
           :via/reply user
           :via/status 200}
          {:via/reply {:error :invalid-credentials}
@@ -54,10 +65,15 @@
     (reg-event-via
      :via/logout
      (fn [context _]
-       {:via/replace-data {:token nil}
+       {:via/replace-connection-context {:token nil}
         :via/reply true
         :via/status 200}))
     authenticator))
+
+
+(defmethod ig/halt-key! :via/authenticator
+  [_ {:keys [sub-key endpoint]}]
+  (via/dispose endpoint sub-key))
 
 (defn authenticate
   "Authenticates the user identified by `id` and `password` and returns a hash map

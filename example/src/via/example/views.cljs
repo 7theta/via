@@ -4,6 +4,7 @@
 
 (defn main-panel []
   [:div {:style {:margin "40px"}}
+   [:span (str "Connected: " @(subscribe [:via.endpoint/connected]))]
    [:br]
    (if @(subscribe [:via.example/authenticated?])
      [:div

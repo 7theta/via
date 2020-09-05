@@ -9,7 +9,6 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require-macros [cljs.core.async.macros :refer [go alt!]])
   (:require [via.defaults :refer [default-via-endpoint]]
             [signum.interceptors :refer [->interceptor]]
             [haslett.client :as ws]
@@ -17,15 +16,23 @@
             [utilis.fn :refer [fsafe]]
             [utilis.map :refer [compact]]
             [utilis.types.string :refer [->string]]
-            [cljs.core.async :as a :refer [chan close! <! >! poll! timeout]]
+            [cljs.core.async :as a :refer [chan close! <! >! poll! timeout go alt! put!]]
+            [re-frame.core :refer [reg-sub-raw] :as re-frame]
+            [reagent.ratom :refer [reaction]]
+            [reagent.core :as r]
             [integrant.core :as ig]
+            [cognitect.transit :as transit]
             [goog.string :refer [format]]
             [goog.string.format]
             [clojure.string :as st]))
 
-(declare connect! disconnect! send! default-via-url exponential-seq)
+;;; Declarations
+
+(declare connect! disconnect! connected? send! default-via-url exponential-seq send*)
 
 (def interceptor)
+
+;;; Integrant
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [url
@@ -39,14 +46,19 @@
            url (default-via-url)}
       :as opts}]
   (let [endpoint {:url url
-                  :stream (atom nil)
-                  :subscriptions (atom {})
+                  :outbound-ch (atom nil)
                   :control-ch (atom nil)
+                  :connect-state (r/atom :initial)
+                  :subscriptions (atom {})
                   :requests (atom {})}
         connect-opts (compact
                       (assoc connect-opts
                              :auto-reconnect auto-reconnect
                              :max-reconnect-interval max-reconnect-interval))]
+    (reg-sub-raw
+     :via.endpoint/connected
+     (fn []
+       (reaction (connected? (fn [] endpoint)))))
     (set!
      interceptor
      (->interceptor
@@ -67,64 +79,67 @@
   [_ endpoint]
   (disconnect! endpoint))
 
-(declare handle-event handle-reply append-query-params)
+;;; API
+
+(declare handle-event handle-reply handle-connection-context append-query-params
+         establish-connection-context)
 
 (defn connect!
   ([endpoint] (connect! endpoint nil))
   ([endpoint {:keys [params
                      auto-reconnect
-                     max-reconnect-interval]}]
-   (let [endpoint (endpoint)]
-     (when-not @(:stream endpoint)
-       (when-let [old-control-ch @(:control-ch endpoint)] (close! old-control-ch))
-       (go (try (let [connection-status (atom :disconnected)]
-                  (loop [backoff-sq (when auto-reconnect (exponential-seq 2 max-reconnect-interval))]
-                    (let [stream (ws/connect (append-query-params (:url endpoint) params)
-                                             {:format fmt/transit})
-                          control-ch (chan)]
-                      (reset! (:control-ch endpoint) control-ch)
-                      (when (= :disconnected
-                               (<! (go
-                                     (let [{:keys [close-status source sink] :as stream} (<! stream)]
-                                       (reset! (:stream endpoint) stream)
-                                       (when (ws/connected? stream)
-                                         (reset! connection-status :connected)
-                                         (handle-event endpoint :open {:status :initial}))
-                                       (loop []
-                                         (alt!
-                                           control-ch (do (ws/close stream) :shutdown)
-                                           source ([message]
-                                                   (if-not (nil? message)
-                                                     (case (:type message)
-                                                       :message (handle-event endpoint :message message)
-                                                       :reply (handle-reply endpoint message))
-                                                     (js/console.warn "via: nil message from server"))
-                                                   (recur))
-                                           close-status ([status]
-                                                         (when (not= :disconnected @connection-status)
-                                                           (reset! connection-status :disconnected)
-                                                           (reset! (:stream endpoint) nil)
-                                                           (handle-event endpoint :close (merge {:status :forced} status)))
-                                                         :disconnected)))))))
-                        (when auto-reconnect
-                          (let [reconnect-interval (first backoff-sq)]
-                            (<! (timeout reconnect-interval))
-                            (recur (rest backoff-sq))))))))
-                (catch js/Error e
-                  (js/console.error "Error occurred in via connection loop" e))))))))
+                     max-reconnect-interval
+                     protocols
+                     binary-type]}]
+   (let [control-ch (reset! (:control-ch (endpoint)) (chan))
+         connection-context (atom nil)
+         handle-message (fn [message]
+                          (if-not (nil? message)
+                            (case (:type message)
+                              :connection-context (handle-connection-context connection-context message)
+                              :message (handle-event (endpoint) :message message)
+                              :reply (handle-reply (endpoint) message))
+                            (js/console.warn "via: nil message from server")))
+         handle-close #(do (reset! (:connect-state (endpoint)) :disconnected)
+                           (reset! (:outbound-ch (endpoint)) nil)
+                           (handle-event (endpoint) :close (merge {:status :forced} %)))]
+     (go (try
+           (loop [backoff-sq (when auto-reconnect (exponential-seq 2 max-reconnect-interval))]
+             (let [return (ws/connect (append-query-params (:url (endpoint)) params)
+                                      {:format fmt/transit})
+                   {:keys [socket source sink close-status] :as stream} (<! return)
+                   recur? (= :recur
+                             (if (ws/connected? stream)
+                               (do (reset! (:outbound-ch (endpoint)) sink)
+                                   (establish-connection-context endpoint stream connection-context)
+                                   (loop []
+                                     (alt!
+                                       control-ch (do (ws/close stream) :exit)
+                                       source ([message] (handle-message message) (recur))
+                                       close-status ([status] (do (handle-close status) :recur)))))
+                               :recur))]
+               (when-let [interval (and recur? auto-reconnect (first backoff-sq))]
+                 (js/console.log "Reconnecting in " (str interval "ms"))
+                 (<! (timeout interval))
+                 (recur (rest backoff-sq)))))
+           (handle-event (endpoint) :shutdown {:status :final})
+           (close! control-ch)
+           (catch js/Error e
+             (js/console.error e "Error occurred in via connection/message loop.")))
+         (js/console.info "via connection loop exited.")))))
 
 (defn disconnect!
   [endpoint]
-  (let [endpoint (endpoint)]
-    (when @(:stream endpoint)
+  (when (connected? endpoint)
+    (let [endpoint (endpoint)]
       (handle-event endpoint :close {:status :normal})
       (close! @(:control-ch endpoint))
       (reset! (:control-ch endpoint) nil)
-      (reset! (:stream endpoint) nil))))
+      (reset! (:outbound-ch endpoint) nil))))
 
 (defn connected?
   [endpoint]
-  (boolean @(:stream (endpoint))))
+  (= :connected @(:connect-state (endpoint))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -141,42 +156,36 @@
 
 (defn send!
   [endpoint message & {:keys [type success-fn failure-fn timeout timeout-fn]
-                       :or {type :message}}]
+                       :or {type :message}
+                       :as options}]
   (if-not (connected? endpoint)
     ((fsafe failure-fn) {:status :disconnected})
-    (if message
-      (let [endpoint (endpoint)
-            do-send (fn [message params]
-                      (if-let [stream @(:stream endpoint)]
-                        (go (>! (:sink stream)
-                                (merge {:type type
-                                        :payload message} params)))
-                        (throw (js/Error. ":via/endpoint not connected"))))]
-        (if-not (or success-fn failure-fn)
-          (do-send message nil)
-          (let [request-id (str (random-uuid))]
-            (swap! (:requests endpoint)
-                   assoc request-id {:success-fn success-fn
-                                     :failure-fn failure-fn
-                                     :message message
-                                     :timer (js/setTimeout (fsafe timeout-fn) timeout)})
-            (do-send message {:request-id request-id
-                              :timeout timeout}))))
-      (js/console.warn ":via/endpoint attempting to send nil message"))))
+    (send* endpoint message (assoc options :type type))))
+
+;;; Implementation
 
 (defn- handle-event
   [endpoint type data]
   (doseq [handler (->> @(:subscriptions endpoint) vals (map type) (remove nil?))]
-    (handler data)))
+    (try (handler data)
+         (catch js/Error e
+           (js/console.error e)))))
 
 (defn- handle-reply
   [endpoint reply]
   (if-let [request (get @(:requests endpoint) (:request-id reply))]
-    (do
-      (js/clearTimeout (:timer request))
-      ((fsafe ((if (= 200 (:status reply)) :success-fn :failure-fn) request))
-       (select-keys reply [:status :payload])))
-    (js/console.warn ":via/endpoint reply with invalid request-id" (:request-id reply))))
+    (do (js/clearTimeout (:timer request))
+        ((fsafe ((if (= 200 (:status reply)) :success-fn :failure-fn) request))
+         (select-keys reply [:status :payload])))
+    (js/console.warn ":via/endpoint reply with invalid request-id" (pr-str reply))))
+
+(defn- handle-connection-context
+  [connection-context {:keys [payload]}]
+  (let [[event-id context] payload]
+    (js/console.info "Got connection context" (pr-str context))
+    (condp = event-id
+      :via.connection-context/updated (reset! connection-context context)
+      (js/console.warn "Unknown via connection-context message" (pr-str payload)))))
 
 (defn- default-via-url
   []
@@ -208,3 +217,47 @@
              {:value (js/Math.pow base (inc step))
               :step (inc step)}))
           (map :value)))))
+
+(defn- send*
+  [endpoint message {:keys [type success-fn failure-fn timeout timeout-fn]
+                     :or {type :message}
+                     :as options}]
+  (if message
+    (let [endpoint (endpoint)
+          do-send (fn [message params]
+                    (if-let [outbound-ch @(:outbound-ch endpoint)]
+                      (go (>! outbound-ch
+                              (merge {:type type
+                                      :payload message} params)))
+                      (throw (js/Error. ":via/endpoint not connected"))))]
+      (if-not (or success-fn failure-fn)
+        (do-send message nil)
+        (let [request-id (str (random-uuid))]
+          (swap! (:requests endpoint)
+                 assoc request-id {:success-fn success-fn
+                                   :failure-fn failure-fn
+                                   :message message
+                                   :timer (js/setTimeout (fsafe timeout-fn) timeout)})
+          (do-send message {:request-id request-id
+                            :timeout timeout}))))
+    (js/console.warn ":via/endpoint attempting to send nil message")))
+
+(defn- establish-connection-context
+  [endpoint {:keys [sink close-status] :as stream} connection-context]
+  (let [ready-ch (chan)
+        response-handler (fn [status]
+                           (fn [response]
+                             (go (>! ready-ch [status response])
+                                 (close! ready-ch))))]
+    (send* endpoint [:via.connection-context/replace @connection-context]
+           {:success-fn (response-handler :success)
+            :failure-fn (response-handler :failure)
+            :timeout 10000
+            :timeout-fn (response-handler :timeout)})
+    (go (let [[status response] (<! ready-ch)]
+          (condp = status
+            :success (let [control-ch @(:control-ch (endpoint))]
+                       (reset! (:connect-state (endpoint)) :connected)
+                       (handle-event (endpoint) :open {:status :initial}))
+            :failure (js/console.warn "Unable to establish connection context" (pr-str response))
+            :timeout (js/console.warn "Timed out establishing connection context" (pr-str response)))))))
