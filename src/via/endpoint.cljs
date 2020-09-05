@@ -182,7 +182,6 @@
 (defn- handle-connection-context
   [connection-context {:keys [payload]}]
   (let [[event-id context] payload]
-    (js/console.info "Got connection context" (pr-str context))
     (condp = event-id
       :via.connection-context/updated (reset! connection-context context)
       (js/console.warn "Unknown via connection-context message" (pr-str payload)))))
