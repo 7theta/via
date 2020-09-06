@@ -25,8 +25,6 @@
 
 (def interceptor)
 
-(def valid? (constantly true))
-
 (defmethod ig/init-key :via/endpoint [_ {:keys []}]
   (let [subscriptions (atom {})
         clients (atom {})
@@ -115,16 +113,24 @@
   [endpoint client-id]
   (get-in @(:clients (endpoint)) [client-id :connection-context]))
 
+(defmacro validate
+  [schema value message]
+  (require '[environ.core :refer [env]])
+  (let [env @(resolve 'env)]
+    (when (= "true" (env :malli))
+      (require '[malli.core :as m])
+      `(assert (m/validate ~schema ~value) ~message))))
+
 (defn merge-connection-context!
   [endpoint client-id connection-context]
-  (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
+  (validate [string?] client-id (str "Must provide valid client-id " {:client-id client-id}))
   (-> (:clients (endpoint))
       (swap! update-in [client-id :connection-context] merge connection-context)
       (get-in [client-id :connection-context])))
 
 (defn replace-connection-context!
   [endpoint client-id connection-context]
-  (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
+  (validate [string?] client-id (str "Must provide valid client-id " {:client-id client-id}))
   (-> (:clients (endpoint))
       (swap! assoc-in [client-id :connection-context] connection-context)
       (get-in [client-id :connection-context])))
@@ -143,7 +149,7 @@
   (let [client-id (get-in context [:request :client-id])
         add-tags (get-in context [:effects :via/add-tags])
         {:keys [clients]} endpoint]
-    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
+    (validate [string?] client-id (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients update-in [client-id :tags] #(union (set %) (set add-tags)))))
 
 (defmethod handle-effect :via/remove-tags
@@ -151,7 +157,7 @@
   (let [client-id (get-in context [:request :client-id])
         remove-tags (get-in context [:effects :via/remove-tags])
         {:keys [clients]} endpoint]
-    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
+    (validate [string?] client-id (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients update-in [client-id :tags] #(difference (set %) (set remove-tags)))))
 
 (defmethod handle-effect :via/replace-tags
@@ -159,7 +165,7 @@
   (let [client-id (get-in context [:request :client-id])
         replace-tags (get-in context [:effects :via/replace-tags])
         {:keys [clients]} endpoint]
-    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
+    (validate [string?] client-id (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients assoc-in [client-id :tags] (set replace-tags))))
 
 (defmethod handle-effect :via/reply

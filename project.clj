@@ -25,6 +25,7 @@
                  [ring/ring-defaults "0.3.2"]
                  [ring/ring-anti-forgery "1.3.0"]
                  [compojure "1.6.2"]
+                 [environ "1.2.0"]
 
                  [com.7theta/distantia "0.2.2"]
                  [com.7theta/signum "3.0.1"]
@@ -35,6 +36,8 @@
   :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
+                   :env {:malli "true"}
+                   :plugins [[lein-environ "0.4.0"]]
                    :dependencies [[binaryage/devtools "1.0.2"]
                                   [thheller/shadow-cljs "2.11.1"]
                                   [integrant/repl "0.3.1"]
