@@ -117,14 +117,14 @@
 
 (defn merge-connection-context!
   [endpoint client-id connection-context]
-  (when (not client-id) (throw (ex-info "Must provide client-id" {:client-id client-id})))
+  (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
   (-> (:clients (endpoint))
       (swap! update-in [client-id :connection-context] merge connection-context)
       (get-in [client-id :connection-context])))
 
 (defn replace-connection-context!
   [endpoint client-id connection-context]
-  (when (not client-id) (throw (ex-info "Must provide client-id" {:client-id client-id})))
+  (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
   (-> (:clients (endpoint))
       (swap! assoc-in [client-id :connection-context] connection-context)
       (get-in [client-id :connection-context])))
@@ -143,7 +143,7 @@
   (let [client-id (get-in context [:request :client-id])
         add-tags (get-in context [:effects :via/add-tags])
         {:keys [clients]} endpoint]
-    (when (not client-id) (throw (ex-info "Must provide client-id" {:client-id client-id})))
+    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients update-in [client-id :tags] #(union (set %) (set add-tags)))))
 
 (defmethod handle-effect :via/remove-tags
