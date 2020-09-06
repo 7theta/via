@@ -35,7 +35,7 @@
         sub-key (via/subscribe endpoint
                                {:connection-context-changed
                                 (fn [connection-context]
-                                  (let [{:keys [token]} connection-context]
+                                  (let [token (get-in connection-context [:via/authenticator :token])]
                                     {:via/replace-tags
                                      (when-let [uid (:id (validate-token authenticator token))]
                                        #{uid})}))})
@@ -46,7 +46,7 @@
       (->interceptor
        :id :via.authenticator/interceptor
        :before (fn [context]
-                 (let [token (get-in context [:coeffects :client :connection-context :token])]
+                 (let [token (get-in context [:coeffects :client :connection-context :via/authenticator :token])]
                    (if (validate-token authenticator token)
                      context
                      (assoc context
@@ -57,7 +57,7 @@
      :via/id-password-login
      (fn [context [_ {:keys [id password]}]]
        (if-let [user (authenticate authenticator id password)]
-         {:via/replace-connection-context {:token (:token user)}
+         {:via/merge-connection-context {:via/authenticator {:token (:token user)}}
           :via/reply user
           :via/status 200}
          {:via/reply {:error :invalid-credentials}
@@ -65,7 +65,7 @@
     (reg-event-via
      :via/logout
      (fn [context _]
-       {:via/replace-connection-context {:token nil}
+       {:via/merge-connection-context {:via/authenticator nil}
         :via/reply true
         :via/status 200}))
     authenticator))

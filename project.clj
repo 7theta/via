@@ -13,7 +13,7 @@
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[re-frame "1.0.0"]
+  :dependencies [[re-frame "1.1.1"]
                  [haslett "0.1.6"]
 
                  [buddy/buddy-auth "2.2.0" :exclusions [clout]]
@@ -36,7 +36,7 @@
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
                    :dependencies [[binaryage/devtools "1.0.2"]
-                                  [thheller/shadow-cljs "2.10.21"]
+                                  [thheller/shadow-cljs "2.11.1"]
                                   [integrant/repl "0.3.1"]
                                   [org.clojure/clojurescript "1.10.773"]]}}
   :prep-tasks ["compile"]

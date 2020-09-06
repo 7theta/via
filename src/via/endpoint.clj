@@ -49,10 +49,9 @@
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects
-                        merge {:endpoint (fn [] endpoint)
-                               :client (get @clients (get-in % [:request :client-id]))
-                               :request (:request %)})
+       :before #(update % :coeffects merge {:endpoint (fn [] endpoint)
+                                            :client (get @clients (get-in % [:request :client-id]))
+                                            :request (:request %)})
        :after #(do (run-effects endpoint %) %))))
     (fn
       ([] endpoint)
@@ -63,10 +62,9 @@
            (as-channel request
                        {:on-open
                         (fn [channel]
-                          (swap! clients assoc
-                                 client-id {:channel channel
-                                            :ring-request request
-                                            :connection-context nil})
+                          (swap! clients assoc client-id {:channel channel
+                                                          :ring-request request
+                                                          :connection-context nil})
                           (handle-event :open {:client-id client-id
                                                :status :initial}))
                         :on-close

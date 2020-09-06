@@ -48,7 +48,7 @@
   (let [endpoint {:url url
                   :outbound-ch (atom nil)
                   :control-ch (atom nil)
-                  :connect-state (r/atom :initial)
+                  :connect-state (r/atom nil)
                   :subscriptions (atom {})
                   :requests (atom {})}
         connect-opts (compact
