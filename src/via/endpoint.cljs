@@ -108,21 +108,23 @@
              (let [return (ws/connect (append-query-params (:url (endpoint)) params)
                                       {:format fmt/transit})
                    {:keys [socket source sink close-status] :as stream} (<! return)
-                   recur? (= :recur
-                             (if (ws/connected? stream)
-                               (do (reset! (:outbound-ch (endpoint)) sink)
-                                   (establish-connection-context endpoint stream connection-context)
-                                   (loop []
-                                     (alt!
-                                       control-ch (do (ws/close stream) :exit)
-                                       source ([message] (handle-message message) (recur))
-                                       close-status ([status] (do (handle-close status) :recur)))))
-                               :recur))]
-               (when-let [interval (and recur? auto-reconnect (first backoff-sq))]
-                 (js/console.log "Reconnecting in " (str interval "ms"))
-                 (<! (timeout interval))
-                 (recur (rest backoff-sq)))))
-           (handle-event (endpoint) :shutdown {:status :final})
+                   result (if (ws/connected? stream)
+                            (do (reset! (:outbound-ch (endpoint)) sink)
+                                (establish-connection-context endpoint stream connection-context)
+                                (loop []
+                                  (alt!
+                                    control-ch (do (ws/close stream) :exit)
+                                    source ([message] (handle-message message) (recur))
+                                    close-status ([status] (do (handle-close status) :disconnected)))))
+                            :connect-failed)]
+               (when (and auto-reconnect (#{:connect-failed :disconnected} result))
+                 (let [backoff-sq (if (= :connect-failed result)
+                                    backoff-sq
+                                    (exponential-seq 2 max-reconnect-interval))
+                       interval (first backoff-sq)]
+                   (js/console.log "Reconnecting in " (str interval "ms"))
+                   (<! (timeout interval))
+                   (recur (rest backoff-sq))))))
            (close! control-ch)
            (catch js/Error e
              (js/console.error e "Error occurred in via connection/message loop.")))
