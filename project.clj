@@ -26,11 +26,11 @@
                  [ring/ring-anti-forgery "1.3.0"]
                  [compojure "1.6.2"]
 
-                 [com.7theta/signum "3.0.1"]
                  [com.7theta/distantia "0.2.2"]
+                 [com.7theta/signum "3.0.1"]
+                 [com.7theta/utilis "1.9.0"]
 
                  [clj-time "0.15.2"]
-                 [com.7theta/utilis "1.9.0"]
                  [integrant "0.8.0"]]
   :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
@@ -38,7 +38,8 @@
                    :dependencies [[binaryage/devtools "1.0.2"]
                                   [thheller/shadow-cljs "2.11.1"]
                                   [integrant/repl "0.3.1"]
-                                  [org.clojure/clojurescript "1.10.773"]]}}
+                                  [org.clojure/clojurescript "1.10.773"]
+                                  [metosin/malli "0.0.1-SNAPSHOT"]]}}
   :prep-tasks ["compile"]
   :scm {:name "git"
         :url "https://github.com/7theta/via"})

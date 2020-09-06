@@ -21,29 +21,18 @@
 
 (declare encode decode send! channels-by-tag disconnect!
          handle-effect handle-connection-context-changed
-         run-effects)
+         run-effects handle-event)
 
 (def interceptor)
+
+(def valid? (constantly true))
 
 (defmethod ig/init-key :via/endpoint [_ {:keys []}]
   (let [subscriptions (atom {})
         clients (atom {})
         params (atom {})
         endpoint {:subscriptions subscriptions
-                  :clients clients
-                  :handle-event (atom nil)}
-        handle-event (fn handle-event
-                       ([event-type event]
-                        (handle-event nil event-type event))
-                       ([context event-type event]
-                        (doseq [handler (->> @subscriptions
-                                             vals
-                                             (map event-type)
-                                             (remove nil?))]
-                          (let [result (handler event)]
-                            (when (and context (map? result))
-                              (run-effects endpoint (assoc context :effects result)))))))]
-    (reset! (:handle-event endpoint) handle-event)
+                  :clients clients}]
     (alter-var-root
      #'interceptor
      (constantly
@@ -65,19 +54,19 @@
                           (swap! clients assoc client-id {:channel channel
                                                           :ring-request request
                                                           :connection-context nil})
-                          (handle-event :open {:client-id client-id
-                                               :status :initial}))
+                          (handle-event endpoint :open {:client-id client-id
+                                                        :status :initial}))
                         :on-close
                         (fn [channel status]
                           (swap! clients dissoc client-id)
-                          (handle-event :close {:client-id client-id :status status}))
+                          (handle-event endpoint :close {:client-id client-id :status status}))
                         :on-receive
                         (fn [channel message]
-                          (handle-event :message (let [{:keys [payload request-id]} (decode message)]
-                                                   {:client-id client-id
-                                                    :request-id request-id
-                                                    :ring-request request
-                                                    :payload payload})))})))))))
+                          (handle-event endpoint :message (let [{:keys [payload request-id]} (decode message)]
+                                                            {:client-id client-id
+                                                             :request-id request-id
+                                                             :ring-request request
+                                                             :payload payload})))})))))))
 
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
@@ -162,7 +151,7 @@
   (let [client-id (get-in context [:request :client-id])
         remove-tags (get-in context [:effects :via/remove-tags])
         {:keys [clients]} endpoint]
-    (when (not client-id) (throw (ex-info "Must provide client-id" {:client-id client-id})))
+    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients update-in [client-id :tags] #(difference (set %) (set remove-tags)))))
 
 (defmethod handle-effect :via/replace-tags
@@ -170,7 +159,7 @@
   (let [client-id (get-in context [:request :client-id])
         replace-tags (get-in context [:effects :via/replace-tags])
         {:keys [clients]} endpoint]
-    (when (not client-id) (throw (ex-info "Must provide client-id" {:client-id client-id})))
+    (assert (valid? [string?] client-id) (str "Must provide valid client-id " {:client-id client-id}))
     (swap! clients assoc-in [client-id :tags] (set replace-tags))))
 
 (defmethod handle-effect :via/reply
@@ -227,11 +216,22 @@
        (map :channel)
        (remove nil?)))
 
+(defn- handle-event
+  ([endpoint event-type event]
+   (handle-event nil endpoint event-type event))
+  ([context endpoint event-type event]
+   (doseq [handler (->> @(:subscriptions endpoint)
+                        vals
+                        (map event-type)
+                        (remove nil?))]
+     (let [result (handler event)]
+       (when (and context (map? result))
+         (run-effects endpoint (assoc context :effects result)))))))
+
 (defn- handle-connection-context-changed
   [{:keys [endpoint context] :as params} connection-context]
-  (let [{:keys [handle-event]} endpoint
-        {:keys [client-id]} (:request context)]
-    (@handle-event context :connection-context-changed connection-context)
+  (let [{:keys [client-id]} (:request context)]
+    (handle-event context endpoint :connection-context-changed connection-context)
     (send! (fn [] endpoint)
            [:via.connection-context/updated connection-context]
            :client-id client-id

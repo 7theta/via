@@ -25,9 +25,22 @@
             [clojure.repl :refer [apropos dir doc find-doc pst source]]
             [clojure.test :refer [run-tests run-all-tests]]
             [clojure.pprint :refer [pprint]]
-            [clojure.reflect :refer [reflect]]))
+            [clojure.reflect :refer [reflect]]
+
+            [malli.error :as me]
+            [malli.core :as m]))
 
 (disable-reload! (find-ns 'integrant.core))
+
+;;; Schema
+
+(defn valid?
+  [schema value]
+  (m/validate schema value))
+
+(alter-var-root #'via.endpoint/valid? (constantly valid?))
+
+;;; Integrant
 
 (def dev-config
   (-> config
