@@ -122,7 +122,7 @@
                                     backoff-sq
                                     (exponential-seq 2 max-reconnect-interval))
                        interval (first backoff-sq)]
-                   (js/console.info (str "Disconnected from via endpoint. Reconnecting in " (str interval "ms...")))
+                   (js/console.info (str "Disconnected from via endpoint. Reconnecting in " (str interval "ms.")))
                    (<! (timeout interval))
                    (recur (rest backoff-sq))))))
            (close! control-ch)
