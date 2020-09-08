@@ -53,6 +53,13 @@
                   :error :invalid-subscription
                   :query-v query-v}})))
 
+(reg-event-via
+ :via.connection-context/replace
+ (fn [{:keys [endpoint request]} [_ connection-context]]
+   {:via/replace-connection-context connection-context
+    :via/status 200
+    :via/reply {:status :success}}))
+
 ;;; Private
 
 (defn- subscribe

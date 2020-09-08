@@ -8,12 +8,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "4.3.1"
+(defproject com.7theta/via "5.0.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[re-frame "1.0.0"]
+  :dependencies [[re-frame "1.1.1"]
                  [haslett "0.1.6"]
 
                  [buddy/buddy-auth "2.2.0" :exclusions [clout]]
@@ -25,20 +25,24 @@
                  [ring/ring-defaults "0.3.2"]
                  [ring/ring-anti-forgery "1.3.0"]
                  [compojure "1.6.2"]
+                 [environ "1.2.0"]
 
-                 [com.7theta/signum "3.0.1"]
                  [com.7theta/distantia "0.2.2"]
+                 [com.7theta/signum "3.0.1"]
+                 [com.7theta/utilis "1.9.0"]
 
                  [clj-time "0.15.2"]
-                 [com.7theta/utilis "1.9.0"]
                  [integrant "0.8.0"]]
   :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
+                   :env {:malli "true"}
+                   :plugins [[lein-environ "0.4.0"]]
                    :dependencies [[binaryage/devtools "1.0.2"]
-                                  [thheller/shadow-cljs "2.10.21"]
+                                  [thheller/shadow-cljs "2.11.1"]
                                   [integrant/repl "0.3.1"]
-                                  [org.clojure/clojurescript "1.10.773"]]}}
+                                  [org.clojure/clojurescript "1.10.773"]
+                                  [metosin/malli "0.0.1-SNAPSHOT"]]}}
   :prep-tasks ["compile"]
   :scm {:name "git"
         :url "https://github.com/7theta/via"})

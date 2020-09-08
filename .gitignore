@@ -15,6 +15,7 @@ checkouts/
 .lein-repl-history
 .lein-plugins/
 .lein-failures
+.lein-env
 .nrepl-port
 
 ### shadow-cljs ###
@@ -98,4 +99,3 @@ Temporary Items
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
-
