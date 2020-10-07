@@ -35,3 +35,25 @@
    (let [value @(subscribe [:api.example/my-counter])]
      {:value value
       :str (str some-text "-" value)})))
+
+(reg-sub
+ :api.example/large-message
+ [#'via/interceptor]
+ (fn [_]
+   (let [generate-large-value #(->> (partial rand-int 128)
+                                    (repeatedly)
+                                    (take (rand-int (* 1024 1024)))
+                                    (map char)
+                                    (apply str))
+         value (s/atom (generate-large-value))]
+     {:ft (future
+            (loop []
+              (Thread/sleep 30000)
+              (reset! value (generate-large-value))
+              (recur)))
+      :value value}))
+ (fn [{:keys [ft]} _]
+   (future-cancel ft))
+ (fn [{:keys [value]} _]
+   {:correlation (rand-int 1000)
+    :string @value}))

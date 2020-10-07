@@ -9,43 +9,69 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [signum.interceptors :refer [->interceptor]]
+  (:require [via.defaults :as via-defaults]
+            [signum.interceptors :refer [->interceptor]]
             [org.httpkit.server :refer [as-channel on-close on-receive
                                         sec-websocket-accept websocket?] :as http]
             [cognitect.transit :as transit]
+            [buddy.hashers :as bh]
+            [buddy.sign.jwt :as jwt]
+            [buddy.core.nonce :as bn]
+            [tick.core :as t]
             [utilis.fn :refer [fsafe]]
             [utilis.logic :refer [xor]]
             [clojure.set :refer [union difference]]
-            [integrant.core :as ig])
+            [integrant.core :as ig]
+            [clojure.string :as st])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
-(declare encode decode send! channels-by-tag disconnect!
-         handle-effect handle-connection-context-changed
-         run-effects handle-event)
+;;; Declarations
+
+(declare send! channels-by-tag disconnect! encode decode
+         handle-effect handle-download handle-connection-context-changed
+         run-effects handle-event channels send-to-channel! audit-downloads)
 
 (def interceptor)
 
-(defmethod ig/init-key :via/endpoint [_ {:keys []}]
+;;; Integrant
+
+(defmethod ig/init-key :via/endpoint
+  [_ {:keys [max-ws
+             download-secret
+             download-expiry-seconds
+             downloads-audit-interval-seconds]
+      :or {max-ws (* 100 1024)
+           download-secret (bn/random-bytes 32)
+           download-expiry-seconds 30
+           downloads-audit-interval-seconds 3600}}]
   (let [subscriptions (atom {})
         clients (atom {})
         params (atom {})
-        endpoint {:subscriptions subscriptions
+        downloads (atom {})
+        downloads-audit-future (audit-downloads downloads downloads-audit-interval-seconds)
+        endpoint {:max-ws max-ws
+                  :download-secret download-secret
+                  :download-expiry-seconds download-expiry-seconds
+                  :downloads downloads
+                  :downloads-audit-future downloads-audit-future
+                  :subscriptions subscriptions
                   :clients clients}]
     (alter-var-root
      #'interceptor
      (constantly
       (->interceptor
        :id :via.endpoint/interceptor
-       :before #(update % :coeffects merge {:endpoint (fn [] endpoint)
-                                            :client (get @clients (get-in % [:request :client-id]))
-                                            :request (:request %)})
+       :before #(update % :coeffects
+                        merge {:endpoint (fn [] endpoint)
+                               :client (get @clients (get-in % [:request :client-id]))
+                               :request (:request %)})
        :after #(do (run-effects endpoint %) %))))
     (fn
       ([] endpoint)
       ([request]
        (let [client-id (get-in request [:headers "sec-websocket-key"])]
-         (if-not (and (:websocket? request) (not-empty client-id))
-           {:status 404}
+         (cond
+           (and (:websocket? request) (not-empty client-id))
            (as-channel request
                        {:on-open
                         (fn [channel]
@@ -60,16 +86,26 @@
                           (handle-event endpoint :close {:client-id client-id :status status}))
                         :on-receive
                         (fn [channel message]
-                          (handle-event endpoint :message (let [{:keys [payload request-id]} (decode message)]
-                                                            {:client-id client-id
-                                                             :request-id request-id
-                                                             :ring-request request
-                                                             :payload payload})))})))))))
+                          (handle-event endpoint :message
+                                        (let [{:keys [payload request-id]} (decode message)]
+                                          {:client-id client-id
+                                           :request-id request-id
+                                           :ring-request request
+                                           :payload payload})))})
+
+           (and (not (:websocket? request))
+                (= "download" (get-in request [:query-params "op"])))
+           (handle-download downloads download-secret request)
+
+           :else {:status 404}))))))
 
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
-  (doseq [c (->> @(:clients (endpoint)) (map :channel) (remove nil?))]
-    (http/close c)))
+  (doseq [c (->> @(:clients (endpoint))
+                 (map :channel)
+                 (remove nil?))]
+    (http/close c))
+  ((fsafe future-cancel) (:downloads-audit-future (endpoint))))
 
 (defn subscribe
   [endpoint callbacks]
@@ -81,20 +117,45 @@
   [endpoint key]
   (swap! (:subscriptions (endpoint)) dissoc key))
 
+;;; API
+
 (defn send!
   "Asynchronously sends `message` to the client for `client-id`"
   [endpoint message & {:keys [type client-id tag params]
-                       :or {type :message}}]
-  (let [encoded-message (encode (merge {:type type :payload message} params))
-        send-to-channel! #(http/send! % encoded-message false)]
-    (if tag
-      (doseq [channel (channels-by-tag endpoint tag)]
-        (send-to-channel! channel))
-      (if-let [channel (get-in @(:clients (endpoint)) [client-id :channel])]
-        (send-to-channel! channel)
-        (println "warn: no client found to send message to"
-                 {:client-id client-id
-                  :message message})))))
+                       :or {type :message}
+                       :as args}]
+  (if-let [channels (not-empty (channels endpoint args))]
+    (let [{:keys [max-ws
+                  download-secret
+                  download-expiry-seconds
+                  downloads]} (endpoint)
+          message (merge {:type type :payload message} params)
+          encoded-message (encode message)
+          large-message? (> (count encoded-message) max-ws)]
+      (doseq [{:keys [channel version]} channels]
+        (if large-message?
+          (if (= version "2")
+            (let [expiry (->> :seconds
+                              (t/new-duration download-expiry-seconds)
+                              (t/+ (t/now)))
+                  payload (jwt/encrypt {:exp expiry
+                                        ;; ensure this token is unique
+                                        :req (str (java.util.UUID/randomUUID))}
+                                       download-secret)]
+              (swap! downloads assoc payload
+                     {:expiry expiry
+                      :message message})
+              (send-to-channel! channel (encode {:type :download :payload payload})))
+            (println "warn: unable to send large message to protocol version 1."
+                     {:max-ws max-ws
+                      :encoded-message-size (count encoded-message)}))
+          (send-to-channel! channel encoded-message))))
+    (when client-id
+      (try (throw (ex-info "warn: no client found to send message to"
+                           {:client-id client-id
+                            :message message}))
+           (catch Exception e
+             (println e))))))
 
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
@@ -105,13 +166,9 @@
 (defn disconnect!
   [endpoint & {:keys [client-id tag]}]
   (doseq [channel (if tag
-                    (channels-by-tag endpoint tag)
+                    (map :channel (channels-by-tag endpoint tag))
                     [(get-in @(:clients (endpoint)) [client-id :channel])])]
     (http/close channel)))
-
-(defn connection-context
-  [endpoint client-id]
-  (get-in @(:clients (endpoint)) [client-id :connection-context]))
 
 (defmacro validate
   [schema value message]
@@ -215,11 +272,17 @@
   (let [in (ByteArrayInputStream. (.getBytes data))]
     (transit/read (transit/reader in :json))))
 
+(defn- channel-map
+  [{:keys [channel connection-context]}]
+  (when channel
+    {:channel channel
+     :version (::version connection-context)}))
+
 (defn- channels-by-tag
   [endpoint tag]
   (->> @(:clients (endpoint)) vals
        (filter #(get (:tags %) tag))
-       (map :channel)
+       (map channel-map)
        (remove nil?)))
 
 (defn- handle-event
@@ -242,6 +305,21 @@
            [:via.connection-context/updated connection-context]
            :client-id client-id
            :type :connection-context)))
+
+(defn- handle-download
+  [downloads download-secret request]
+  (when-let [authorization (get-in request [:headers "authorization"])]
+    (let [[_ token] (st/split authorization #" ")]
+      (when (try
+              (when token (jwt/decrypt token download-secret))
+              (catch Exception _ nil))
+        (when-let [message (locking downloads
+                             (when-let [{:keys [message]} (get @downloads token)]
+                               (swap! downloads dissoc token)
+                               message))]
+          {:status 200
+           :body (ByteArrayInputStream. (.getBytes (encode message)))
+           :headers {"Content-Type" "application/octet-stream"}})))))
 
 (def ^:private known-effects
   [:via/replace-connection-context
@@ -266,3 +344,26 @@
       (when (and (= :via (keyword (namespace effect-id)))
                  (not (known-effects-set effect-id)))
         (throw (ex-info "Unrecognized via effect" {:effect-id effect-id}))))))
+
+(defn- send-to-channel!
+  [channel encoded-message]
+  (http/send! channel encoded-message false))
+
+(defn- channels
+  [endpoint {:keys [client-id tag]}]
+  (if tag
+    (channels-by-tag endpoint tag)
+    [(channel-map (get @(:clients (endpoint)) client-id))]))
+
+(defn- audit-downloads
+  [downloads downloads-audit-interval-seconds]
+  (future
+    (try (loop []
+           (doseq [[key {:keys [expiry]}] @downloads]
+             (when (t/> (t/now) expiry)
+               (swap! downloads dissoc key)))
+           (Thread/sleep (* downloads-audit-interval-seconds 1000))
+           (recur))
+         (catch Exception e
+           (when (not (instance? java.lang.InterruptedException e))
+             (println e "Error occurred in downloads audit future."))))))
