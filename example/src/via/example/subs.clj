@@ -42,13 +42,13 @@
  (fn [_]
    (let [generate-large-value #(->> (partial rand-int 128)
                                     (repeatedly)
-                                    (take (rand-int (* 1024 1024)))
+                                    (take (rand-int (* 5 1024 1024)))
                                     (map char)
                                     (apply str))
          value (s/atom (generate-large-value))]
      {:ft (future
             (loop []
-              (Thread/sleep 30000)
+              (Thread/sleep 10000)
               (reset! value (generate-large-value))
               (recur)))
       :value value}))

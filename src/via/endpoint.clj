@@ -37,10 +37,12 @@
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [max-ws
+             max-ws-v1
              download-secret
              download-expiry-seconds
              downloads-audit-interval-seconds]
       :or {max-ws (* 100 1024)
+           max-ws-v1 (* 4 1024 1024)
            download-secret (bn/random-bytes 32)
            download-expiry-seconds 30
            downloads-audit-interval-seconds 3600}}]
@@ -50,6 +52,7 @@
         downloads (atom {})
         downloads-audit-future (audit-downloads downloads downloads-audit-interval-seconds)
         endpoint {:max-ws max-ws
+                  :max-ws-v1 max-ws-v1
                   :download-secret download-secret
                   :download-expiry-seconds download-expiry-seconds
                   :downloads downloads
@@ -126,6 +129,7 @@
                        :as args}]
   (if-let [channels (not-empty (channels endpoint args))]
     (let [{:keys [max-ws
+                  max-ws-v1
                   download-secret
                   download-expiry-seconds
                   downloads]} (endpoint)
@@ -133,23 +137,29 @@
           encoded-message (encode message)
           large-message? (> (count encoded-message) max-ws)]
       (doseq [{:keys [channel version]} channels]
-        (if large-message?
-          (if (= version "2")
-            (let [expiry (->> :seconds
-                              (t/new-duration download-expiry-seconds)
-                              (t/+ (t/now)))
-                  payload (jwt/encrypt {:exp expiry
-                                        ;; ensure this token is unique
-                                        :req (str (java.util.UUID/randomUUID))}
-                                       download-secret)]
-              (swap! downloads assoc payload
-                     {:expiry expiry
-                      :message message})
-              (send-to-channel! channel (encode {:type :download :payload payload})))
-            (println "warn: unable to send large message to protocol version 1."
-                     {:max-ws max-ws
-                      :encoded-message-size (count encoded-message)}))
-          (send-to-channel! channel encoded-message))))
+        (cond
+          (and large-message? (= version "2"))
+          (let [expiry (->> :seconds
+                            (t/new-duration download-expiry-seconds)
+                            (t/+ (t/now)))
+                payload (jwt/encrypt {:exp expiry
+                                      ;; ensure this token is unique
+                                      :req (str (java.util.UUID/randomUUID))}
+                                     download-secret)]
+            (swap! downloads assoc payload
+                   {:expiry expiry
+                    :message message})
+            (send-to-channel! channel (encode {:type :download :payload payload})))
+
+          (or (not large-message?)
+              (and large-message?
+                   (< (count encoded-message) max-ws-v1)))
+          (send-to-channel! channel encoded-message)
+
+          :else
+          (println "warn: unable to send large message to protocol version 1."
+                   {:max-ws max-ws-v1
+                    :encoded-message-size (count encoded-message)}))))
     (when client-id
       (try (throw (ex-info "warn: no client found to send message to"
                            {:client-id client-id
