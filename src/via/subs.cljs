@@ -96,8 +96,7 @@
  :via.subs.db/write
  (fn [{:keys [db]} [_ {:keys [path sn] :as msg}]]
    (let [{:keys [window last-sn]
-          :or {last-sn 0}
-          :as sub} (get-in db path)
+          :or {last-sn 0}} (get-in db path)
          [contiguous-messages window] (->> msg
                                            (conj window)
                                            (split-contiguous last-sn))]
