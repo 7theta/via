@@ -42,7 +42,7 @@
  (fn [_]
    (let [generate-large-value #(->> (partial rand-int 128)
                                     (repeatedly)
-                                    (take (rand-int (* 5 1024 1024)))
+                                    (take (rand-int (* 10 1024 1024)))
                                     (map char)
                                     (apply str))
          value (s/atom (generate-large-value))]

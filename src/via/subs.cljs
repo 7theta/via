@@ -14,7 +14,7 @@
             [distantia.core :refer [patch]]
             [utilis.fn :refer [fsafe]]
             [utilis.types.keyword :refer [->keyword]]
-            [re-frame.core :refer [reg-sub reg-event-db dispatch] :as re-frame]
+            [re-frame.core :refer [reg-sub reg-event-db reg-event-fx dispatch] :as re-frame]
             [re-frame.subs :refer [query->reaction]]
             [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
@@ -77,17 +77,33 @@
                                   :change change
                                   :sn sn}])))
 
-(reg-event-db
+(defn- write-message
+  [db {:keys [path change sn]}]
+  (let [now (js/Date.)]
+    (-> (if (= :v (first change))
+          (assoc-in db (conj path :value) (second change))
+          (update-in db (conj path :value) patch (second change)))
+        (assoc-in (conj path :updated) (.getTime (js/Date.)))
+        (assoc-in (conj path :last-sn) sn))))
+
+(defn- split-contiguous
+  [last-sn window]
+  (let [window (sort-by :sn window)
+        state (volatile! last-sn)]
+    (split-with #(= (:sn %) (vswap! state inc)) window)))
+
+(reg-event-fx
  :via.subs.db/write
- (fn [db [_ {:keys [path change sn]}]]
-   (if (> sn (or (get-in db (conj path :sn)) 0))
-     (let [now (js/Date.)]
-       (-> (if (= :v (first change))
-             (assoc-in db (conj path :value) (second change))
-             (update-in db (conj path :value) patch (second change)))
-           (assoc-in (conj path :updated) (.getTime (js/Date.)))
-           (assoc-in (conj path :sn) sn)))
-     db)))
+ (fn [{:keys [db]} [_ {:keys [path sn] :as msg}]]
+   (let [{:keys [window last-sn]
+          :or {last-sn 0}
+          :as sub} (get-in db path)
+         [contiguous-messages window] (->> msg
+                                           (conj window)
+                                           (split-contiguous last-sn))]
+     {:db (as-> db %
+            (assoc-in % (conj path :window) window)
+            (reduce write-message % contiguous-messages))})))
 
 (reg-event-db
  :via.subs.db/clear

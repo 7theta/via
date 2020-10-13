@@ -131,7 +131,8 @@
                   downloads]} (endpoint)
           message (merge {:type type :payload message} params)
           encoded-message (encode message)
-          large-message? (> (count encoded-message) max-ws)]
+          encoded-message-size (count (.getBytes encoded-message))
+          large-message? (> encoded-message-size max-ws)]
       (doseq [{:keys [channel version]} channels]
         (cond
           (not large-message?)
@@ -153,7 +154,7 @@
           :else
           (println "warn: unable to send large message to protocol version 1."
                    {:max-ws max-ws
-                    :encoded-message-size (count encoded-message)}))))
+                    :encoded-message-size encoded-message-size}))))
     (when client-id
       (try (throw (ex-info "warn: no client found to send message to"
                            {:client-id client-id
