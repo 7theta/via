@@ -14,7 +14,7 @@
             [distantia.core :refer [patch]]
             [utilis.fn :refer [fsafe]]
             [utilis.types.keyword :refer [->keyword]]
-            [re-frame.core :refer [reg-sub reg-event-db reg-event-fx dispatch] :as re-frame]
+            [re-frame.core :refer [reg-sub reg-event-db dispatch] :as re-frame]
             [re-frame.subs :refer [query->reaction]]
             [reagent.ratom :refer [make-reaction]]
             [integrant.core :as ig]
@@ -92,17 +92,17 @@
         state (volatile! last-sn)]
     (split-with #(= (:sn %) (vswap! state inc)) window)))
 
-(reg-event-fx
+(reg-event-db
  :via.subs.db/write
- (fn [{:keys [db]} [_ {:keys [path sn] :as msg}]]
+ (fn [db [_ {:keys [path sn] :as msg}]]
    (let [{:keys [window last-sn]
           :or {last-sn 0}} (get-in db path)
          [contiguous-messages window] (->> msg
                                            (conj window)
                                            (split-contiguous last-sn))]
-     {:db (as-> db %
-            (assoc-in % (conj path :window) window)
-            (reduce write-message % contiguous-messages))})))
+     (as-> db %
+       (assoc-in % (conj path :window) window)
+       (reduce write-message % contiguous-messages)))))
 
 (reg-event-db
  :via.subs.db/clear
