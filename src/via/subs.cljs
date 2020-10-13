@@ -89,8 +89,12 @@
 (defn- split-contiguous
   [last-sn window]
   (let [window (sort-by :sn window)
-        state (volatile! last-sn)]
-    (split-with #(= (:sn %) (vswap! state inc)) window)))
+        state (volatile! last-sn)
+        result (partition-by #(= (:sn %) (vswap! state inc)) window)]
+    (cond
+      (= (count result) 2) result
+      (= (inc last-sn) (:sn (ffirst result))) [(first result) nil]
+      :else [nil (first result)])))
 
 (reg-event-db
  :via.subs.db/write
