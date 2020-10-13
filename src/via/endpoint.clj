@@ -37,12 +37,10 @@
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [max-ws
-             max-ws-v1
              download-secret
              download-expiry-seconds
              downloads-audit-interval-seconds]
-      :or {max-ws (* 100 1024)
-           max-ws-v1 (* 4 1024 1024)
+      :or {max-ws (* 4 1024 1024)
            download-secret (bn/random-bytes 32)
            download-expiry-seconds 30
            downloads-audit-interval-seconds 3600}}]
@@ -52,7 +50,6 @@
         downloads (atom {})
         downloads-audit-future (audit-downloads downloads downloads-audit-interval-seconds)
         endpoint {:max-ws max-ws
-                  :max-ws-v1 max-ws-v1
                   :download-secret download-secret
                   :download-expiry-seconds download-expiry-seconds
                   :downloads downloads
@@ -129,7 +126,6 @@
                        :as args}]
   (if-let [channels (not-empty (channels endpoint args))]
     (let [{:keys [max-ws
-                  max-ws-v1
                   download-secret
                   download-expiry-seconds
                   downloads]} (endpoint)
@@ -138,7 +134,10 @@
           large-message? (> (count encoded-message) max-ws)]
       (doseq [{:keys [channel version]} channels]
         (cond
-          (and large-message? (= version "2"))
+          (not large-message?)
+          (send-to-channel! channel encoded-message)
+
+          (and large-message? (= version 2))
           (let [expiry (->> :seconds
                             (t/new-duration download-expiry-seconds)
                             (t/+ (t/now)))
@@ -151,14 +150,9 @@
                     :message message})
             (send-to-channel! channel (encode {:type :download :payload payload})))
 
-          (or (not large-message?)
-              (and large-message?
-                   (< (count encoded-message) max-ws-v1)))
-          (send-to-channel! channel encoded-message)
-
           :else
           (println "warn: unable to send large message to protocol version 1."
-                   {:max-ws max-ws-v1
+                   {:max-ws max-ws
                     :encoded-message-size (count encoded-message)}))))
     (when client-id
       (try (throw (ex-info "warn: no client found to send message to"
@@ -316,20 +310,34 @@
            :client-id client-id
            :type :connection-context)))
 
+(defn- validate-download-token
+  [token download-secret]
+  (try
+    (when token (jwt/decrypt token download-secret))
+    (catch Exception _ nil)))
+
+(defn- download-response
+  [downloads token]
+  (when-let [message (locking downloads
+                       (when-let [{:keys [message]} (get @downloads token)]
+                         (swap! downloads dissoc token)
+                         message))]
+    {:status 200
+     :body (ByteArrayInputStream. (.getBytes (encode message)))
+     :headers {"Content-Type" "application/octet-stream"}}))
+
 (defn- handle-download
   [downloads download-secret request]
   (when-let [authorization (get-in request [:headers "authorization"])]
     (let [[_ token] (st/split authorization #" ")]
-      (when (try
-              (when token (jwt/decrypt token download-secret))
-              (catch Exception _ nil))
-        (when-let [message (locking downloads
-                             (when-let [{:keys [message]} (get @downloads token)]
-                               (swap! downloads dissoc token)
-                               message))]
-          {:status 200
-           :body (ByteArrayInputStream. (.getBytes (encode message)))
-           :headers {"Content-Type" "application/octet-stream"}})))))
+      (cond
+        (not token)
+        {:status 400 :body "No bearer token provided."}
+
+        (not (validate-download-token token download-secret))
+        {:status 403 :body "Token is corrupt or invalid."}
+
+        :else (download-response downloads token)))))
 
 (def ^:private known-effects
   [:via/replace-connection-context
@@ -376,4 +384,4 @@
            (recur))
          (catch Exception e
            (when (not (instance? java.lang.InterruptedException e))
-             (println e "Error occurred in downloads audit future."))))))
+             (println "Error occurred in downloads audit future." e))))))

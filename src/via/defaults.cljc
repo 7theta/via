@@ -11,4 +11,4 @@
 (ns via.defaults)
 
 (def default-via-endpoint "/via")
-(def protocol-version "2")
+(def protocol-version 2)

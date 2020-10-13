@@ -72,17 +72,22 @@
 
 (reg-event-via
  :via.subs.db/updated
- (fn [_ [_ {:keys [query-v change]}]]
-   (dispatch [:via.subs.db/write {:path (path query-v) :change change}])))
+ (fn [_ [_ {:keys [query-v change sn]}]]
+   (dispatch [:via.subs.db/write {:path (path query-v)
+                                  :change change
+                                  :sn sn}])))
 
 (reg-event-db
  :via.subs.db/write
- (fn [db [_ {:keys [path change]}]]
-   (let [now (js/Date.)]
-     (-> (if (= :v (first change))
-           (assoc-in db (conj path :value) (second change))
-           (update-in db (conj path :value) patch (second change)))
-         (assoc-in (conj path :updated) (.getTime (js/Date.)))))))
+ (fn [db [_ {:keys [path change sn]}]]
+   (if (> sn (or (get-in db (conj path :sn)) 0))
+     (let [now (js/Date.)]
+       (-> (if (= :v (first change))
+             (assoc-in db (conj path :value) (second change))
+             (update-in db (conj path :value) patch (second change)))
+           (assoc-in (conj path :updated) (.getTime (js/Date.)))
+           (assoc-in (conj path :sn) sn)))
+     db)))
 
 (reg-event-db
  :via.subs.db/clear
