@@ -5,6 +5,9 @@
 (defn main-panel []
   [:div {:style {:margin "40px"}}
    [:span (str "Connected: " @(subscribe [:via.endpoint/connected]))]
+   [:div {:style {:margin-top "20px"}}
+    "Large Message String: " (some-> @(subscribe [:api.example/large-message])
+                                     (update :string count))]
    [:br]
    (if @(subscribe [:via.example/authenticated?])
      [:div

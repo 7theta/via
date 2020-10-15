@@ -72,17 +72,41 @@
 
 (reg-event-via
  :via.subs.db/updated
- (fn [_ [_ {:keys [query-v change]}]]
-   (dispatch [:via.subs.db/write {:path (path query-v) :change change}])))
+ (fn [_ [_ {:keys [query-v change sn]}]]
+   (dispatch [:via.subs.db/write {:path (path query-v)
+                                  :change change
+                                  :sn sn}])))
+
+(defn- write-message
+  [db {:keys [path change sn]}]
+  (let [now (js/Date.)]
+    (-> (if (= :v (first change))
+          (assoc-in db (conj path :value) (second change))
+          (update-in db (conj path :value) patch (second change)))
+        (assoc-in (conj path :updated) (.getTime (js/Date.)))
+        (assoc-in (conj path :last-sn) sn))))
+
+(defn- split-contiguous
+  [last-sn window]
+  (let [window (sort-by :sn window)
+        state (volatile! last-sn)
+        result (partition-by #(= (:sn %) (vswap! state inc)) window)]
+    (cond
+      (= (count result) 2) result
+      (= (inc last-sn) (:sn (ffirst result))) [(first result) nil]
+      :else [nil (first result)])))
 
 (reg-event-db
  :via.subs.db/write
- (fn [db [_ {:keys [path change]}]]
-   (let [now (js/Date.)]
-     (-> (if (= :v (first change))
-           (assoc-in db (conj path :value) (second change))
-           (update-in db (conj path :value) patch (second change)))
-         (assoc-in (conj path :updated) (.getTime (js/Date.)))))))
+ (fn [db [_ {:keys [path sn] :as msg}]]
+   (let [{:keys [window last-sn]
+          :or {last-sn 0}} (get-in db path)
+         [contiguous-messages window] (->> msg
+                                           (conj window)
+                                           (split-contiguous last-sn))]
+     (as-> db %
+       (assoc-in % (conj path :window) window)
+       (reduce write-message % contiguous-messages)))))
 
 (reg-event-db
  :via.subs.db/clear

@@ -38,8 +38,8 @@
 
 (reg-event-fx
  :via.example/logout
- (fn [_ _]
-   {:dispatch [:initialize-db]
+ (fn [{:keys [db]} _]
+   {:db (dissoc db :authenticated)
     :via/dispatch {:event [:via/logout]}}))
 
 (reg-event-fx
@@ -69,4 +69,4 @@
 (reg-event-via
  :via.example/server-broadcast
  (fn [_ [_ message]]
-   (js/console.log "Server Push:" message)))
+   (js/console.log "Server Push:" (clj->js message))))

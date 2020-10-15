@@ -68,15 +68,18 @@
     (when-let [signal (binding [signum/*context* {:endpoint endpoint :request request}]
                         (signum/subscribe query-v))]
       (let [client-id (:client-id request)
+            sequence-number (atom (long 0))
             watch-key (str ":via-" query-v "(" client-id ")")
-            send-value! #(try
-                           (via/send! endpoint (conj (vec callback) {:query-v query-v :change %})
-                                      :client-id client-id)
-                           true
-                           (catch Exception e
-                             (println :via/send-value "->" client-id "\n" e)
-                             (dispose endpoint client-id)
-                             false))]
+            send-value! #(try (via/send! endpoint (conj (vec callback)
+                                                        {:query-v query-v
+                                                         :change %
+                                                         :sn (swap! sequence-number inc)})
+                                         :client-id client-id)
+                              true
+                              (catch Exception e
+                                (println :via/send-value "->" client-id "\n" e)
+                                (dispose endpoint client-id)
+                                false))]
         (swap! subscriptions assoc [query-v client-id] {:signal signal :watch-key watch-key})
         (add-watch signal watch-key (fn [_ _ old new]
                                       (when (not= old new)

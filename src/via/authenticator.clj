@@ -15,7 +15,7 @@
             [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
-            [clj-time.core :as t]
+            [tick.core :as t]
             [integrant.core :as ig]))
 
 (declare validate-token authenticate)
@@ -85,7 +85,7 @@
     (when-let [user (query-fn id)]
       (when (bh/check password (:password user))
         (let [user (dissoc user :password)]
-          (assoc user :token (jwt/encrypt (assoc user :exp (t/plus (t/now) (t/hours expiry)))
+          (assoc user :token (jwt/encrypt (assoc user :exp (t/+ (t/now) (t/new-duration expiry :hours)))
                                           secret)))))
     (catch Exception _ nil)))
 

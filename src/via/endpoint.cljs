@@ -9,13 +9,14 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.defaults :refer [default-via-endpoint]]
+  (:require [via.defaults :refer [default-via-endpoint protocol-version]]
             [signum.interceptors :refer [->interceptor]]
             [haslett.client :as ws]
             [haslett.format :as fmt]
             [utilis.fn :refer [fsafe]]
             [utilis.map :refer [compact]]
             [utilis.types.string :refer [->string]]
+            [utilis.js :as j]
             [cljs.core.async :as a :refer [chan close! <! >! poll! timeout go alt! put!]]
             [re-frame.core :refer [reg-sub-raw] :as re-frame]
             [reagent.ratom :refer [reaction]]
@@ -46,6 +47,9 @@
            url (default-via-url)}
       :as opts}]
   (let [endpoint {:url url
+                  :download-url (-> url
+                                    (st/replace #"^wss" "https")
+                                    (st/replace #"^ws" "http"))
                   :outbound-ch (atom nil)
                   :control-ch (atom nil)
                   :connect-state (r/atom nil)
@@ -81,8 +85,8 @@
 
 ;;; API
 
-(declare handle-event handle-reply handle-connection-context append-query-params
-         establish-connection-context)
+(declare handle-event handle-reply handle-connection-context handle-download
+         append-query-params establish-connection-context)
 
 (defn connect!
   ([endpoint] (connect! endpoint nil))
@@ -92,14 +96,15 @@
                      protocols
                      binary-type]}]
    (let [control-ch (reset! (:control-ch (endpoint)) (chan))
-         connection-context (atom nil)
-         handle-message (fn [message]
-                          (if-not (nil? message)
-                            (case (:type message)
-                              :connection-context (handle-connection-context connection-context message)
-                              :message (handle-event (endpoint) :message message)
-                              :reply (handle-reply (endpoint) message))
-                            (js/console.warn "via: nil message from server")))
+         connection-context (atom {::version protocol-version})
+         handle-message (fn handle-message [message]
+                          (case (:type message)
+                            :connection-context (handle-connection-context connection-context message)
+                            :message (handle-event (endpoint) :message message)
+                            :reply (handle-reply (endpoint) message)
+                            :download (handle-download (endpoint) handle-message message)
+                            (js/console.warn "via: unhandled message from server: "
+                                             (if message (clj->js message) "nil"))))
          handle-close #(do (reset! (:connect-state (endpoint)) :disconnected)
                            (reset! (:outbound-ch (endpoint)) nil)
                            (handle-event (endpoint) :close (merge {:status :forced} %)))]
@@ -187,6 +192,27 @@
     (condp = event-id
       :via.connection-context/updated (reset! connection-context context)
       (js/console.warn "Unknown via connection-context message" (pr-str payload)))))
+
+(defn- decode-downloaded-message
+  [message]
+  (js/Promise.
+   (fn [resolve reject]
+     (resolve (fmt/read fmt/transit message)))))
+
+(defn- handle-download
+  [{:keys [url download-url]} handle-message {:keys [payload] :as message}]
+  (-> (str download-url "?op=download")
+      (js/fetch (clj->js {:headers {"Authorization" (str "Bearer " payload)}}))
+      (j/call :then #(if (= 200 (j/get % :status))
+                       (j/call % :text)
+                       (->> (cljs.pprint/pprint message)
+                            (with-out-str)
+                            (str "Failed to download\n")
+                            (js/Error.)
+                            (throw))))
+      (j/call :then decode-downloaded-message)
+      (j/call :then handle-message)
+      (j/call :catch #(js/console.warn %))))
 
 (defn- default-via-url
   []

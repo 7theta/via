@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "5.0.0"
+(defproject com.7theta/via "5.1.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -30,8 +30,7 @@
                  [com.7theta/distantia "0.2.2"]
                  [com.7theta/signum "3.0.1"]
                  [com.7theta/utilis "1.9.0"]
-
-                 [clj-time "0.15.2"]
+                 [tick "0.4.24-alpha"]
                  [integrant "0.8.0"]]
   :profiles {:dev {:source-paths ["dev" "example/src"]
                    :resource-paths ["example/resources"]
