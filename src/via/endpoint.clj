@@ -12,7 +12,6 @@
   (:require [signum.interceptors :refer [->interceptor]]
             [ring.adapter.undertow.websocket :as ws]
             [cognitect.transit :as transit]
-            [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
             [tick.core :as t]

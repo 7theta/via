@@ -11,38 +11,6 @@
    db/default-db))
 
 (reg-event-fx
- :via.example/login
- (fn [{:keys [db]} _]
-   {:via/dispatch
-    {:event [:via/id-password-login {:id "admin" :password "admin"}]
-     :on-success [:via.example.login/succeeded]
-     :on-failure [:via.example.login/failed]
-     :on-timeout [:via.example.login/timed-out]}}))
-
-(reg-event-fx
- :via.example.login/succeeded
- (fn [{:keys [db]} [_ login-creds]]
-   {:db (assoc db :authenticated login-creds)}))
-
-(reg-event-db
- :via.example.login/failed
- (fn [db error]
-   (js/console.error ":via.example.login/failed" (pr-str error))
-   (dissoc db :authenticated)))
-
-(reg-event-db
- :via.example.login/timed-out
- (fn [db error]
-   (js/console.error ":via.example.login/timed-out" (pr-str error))
-   (dissoc db :authenticated)))
-
-(reg-event-fx
- :via.example/logout
- (fn [{:keys [db]} _]
-   {:db (dissoc db :authenticated)
-    :via/dispatch {:event [:via/logout]}}))
-
-(reg-event-fx
  :via.example/increment-count
  (fn [_ _]
    {:via/dispatch {:event [:api.example/increment-count]

@@ -9,6 +9,9 @@ WebSocket connection between a
 
 The `example` directory has a fully functioning application.
 
+Check out [via-auth](https://github.com/7theta/via-auth) for
+authentication strategies.
+
 ## Copyright and License
 
 Copyright © 2015-2020 7theta
