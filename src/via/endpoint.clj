@@ -9,10 +9,8 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.defaults :as via-defaults]
-            [signum.interceptors :refer [->interceptor]]
-            [org.httpkit.server :refer [as-channel on-close on-receive
-                                        sec-websocket-accept websocket?] :as http]
+  (:require [signum.interceptors :refer [->interceptor]]
+            [ring.adapter.undertow.websocket :as ws]
             [cognitect.transit :as transit]
             [buddy.hashers :as bh]
             [buddy.sign.jwt :as jwt]
@@ -29,7 +27,7 @@
 
 (declare send! channels-by-tag disconnect! encode decode
          handle-effect handle-download handle-connection-context-changed
-         run-effects handle-event channels send-to-channel! audit-downloads)
+         run-effects handle-event channels audit-downloads)
 
 (def interceptor)
 
@@ -72,26 +70,26 @@
        (let [client-id (get-in request [:headers "sec-websocket-key"])]
          (cond
            (and (:websocket? request) (not-empty client-id))
-           (as-channel request
-                       {:on-open
-                        (fn [channel]
-                          (swap! clients assoc client-id {:channel channel
-                                                          :ring-request request
-                                                          :connection-context nil})
-                          (handle-event endpoint :open {:client-id client-id
-                                                        :status :initial}))
-                        :on-close
-                        (fn [channel status]
-                          (swap! clients dissoc client-id)
-                          (handle-event endpoint :close {:client-id client-id :status status}))
-                        :on-receive
-                        (fn [channel message]
-                          (handle-event endpoint :message
-                                        (let [{:keys [payload request-id]} (decode message)]
-                                          {:client-id client-id
-                                           :request-id request-id
-                                           :ring-request request
-                                           :payload payload})))})
+           {:undertow/websocket
+            {:on-open
+             (fn [{:keys [channel]}]
+               (swap! clients assoc client-id {:channel channel
+                                               :ring-request request
+                                               :connection-context nil})
+               (handle-event endpoint :open {:client-id client-id
+                                             :status :initial}))
+             :on-close
+             (fn [{:keys [channel ws-channel] :as opts}]
+               (swap! clients dissoc client-id)
+               (handle-event endpoint :close {:client-id client-id
+                                              :remote-close (.isCloseInitiatedByRemotePeer ws-channel)}))
+             :on-message
+             (fn [{:keys [channel data]}]
+               (handle-event endpoint :message (let [{:keys [payload request-id]} (decode data)]
+                                                 {:client-id client-id
+                                                  :request-id request-id
+                                                  :ring-request request
+                                                  :payload payload})))}}
 
            (and (not (:websocket? request))
                 (= "download" (get-in request [:query-params "op"])))
@@ -104,7 +102,7 @@
   (doseq [c (->> @(:clients (endpoint))
                  (map :channel)
                  (remove nil?))]
-    (http/close c))
+    (.close c))
   ((fsafe future-cancel) (:downloads-audit-future (endpoint))))
 
 (defn subscribe
@@ -132,11 +130,12 @@
           message (merge {:type type :payload message} params)
           encoded-message (encode message)
           encoded-message-size (count (.getBytes encoded-message))
+          send-to-channel! (partial ws/send encoded-message)
           large-message? (> encoded-message-size max-ws)]
       (doseq [{:keys [channel version]} channels]
         (cond
           (not large-message?)
-          (send-to-channel! channel encoded-message)
+          (send-to-channel! channel)
 
           (and large-message? (= version 2))
           (let [expiry (->> :seconds
@@ -149,7 +148,7 @@
             (swap! downloads assoc payload
                    {:expiry expiry
                     :message message})
-            (send-to-channel! channel (encode {:type :download :payload payload})))
+            (ws/send (encode {:type :download :payload payload}) channel))
 
           :else
           (println "warn: unable to send large message to protocol version 1."
@@ -173,7 +172,7 @@
   (doseq [channel (if tag
                     (map :channel (channels-by-tag endpoint tag))
                     [(get-in @(:clients (endpoint)) [client-id :channel])])]
-    (http/close channel)))
+    (.close channel)))
 
 (defmacro validate
   [schema value message]
@@ -363,10 +362,6 @@
       (when (and (= :via (keyword (namespace effect-id)))
                  (not (known-effects-set effect-id)))
         (throw (ex-info "Unrecognized via effect" {:effect-id effect-id}))))))
-
-(defn- send-to-channel!
-  [channel encoded-message]
-  (http/send! channel encoded-message false))
 
 (defn- channels
   [endpoint {:keys [client-id tag]}]
