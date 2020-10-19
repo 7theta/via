@@ -11,6 +11,6 @@ The `example` directory has a fully functioning application.
 
 ## Copyright and License
 
-Copyright © 2015-2018 7theta
+Copyright © 2015-2020 7theta
 
 Distributed under the Eclipse Public License.
