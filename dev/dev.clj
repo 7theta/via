@@ -31,7 +31,7 @@
 
 (def dev-config
   (-> config
-      (assoc-in [:via/http-server :port] 3449)
+      (assoc-in [:via/http-server :http-port] 3449)
       (assoc :shadow-cljs {})))
 
 (defmethod ig/init-key :shadow-cljs [_ _]

@@ -11,6 +11,6 @@
        (GET "/" req-req (response/content-type
                          (response/resource-response "public/index.html")
                          "text/html"))
-       (GET  default-via-endpoint ring-req (via-handler ring-req))
+       (GET default-via-endpoint ring-req (via-handler ring-req))
        (route/resources "/"))
       (ring-defaults/wrap-defaults ring-defaults/site-defaults)))

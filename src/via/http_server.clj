@@ -9,20 +9,25 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.http-server
-  (:require [org.httpkit.server :as http]
+  (:require [ring.adapter.undertow :refer [run-undertow]]
+            [ring.adapter.undertow.middleware.session :refer [wrap-session]]
             [utilis.fn :refer [fsafe]]
-            [integrant.core :as ig]))
+            [integrant.core :as ig]
+            [clojure.set :as set]))
 
 (defmethod ig/init-key :via/http-server [_ opts]
   (let [ring-handler (atom (delay (:ring-handler opts)))]
     {:ring-handler ring-handler
-     :http-server (http/run-server (fn [req] ((fsafe @@ring-handler) req))
-                                   (-> (dissoc opts :ring-handler)
-                                       (assoc :legacy-return-value? false)))}))
+     :http-server (run-undertow (fn [req] ((fsafe @@ring-handler) req))
+                                (merge
+                                 {:http2? true}
+                                 (-> opts
+                                     (dissoc :ring-handler)
+                                     (set/rename-keys {:http-port :port
+                                                       :https-port :ssl-port}))))}))
 
 (defmethod ig/halt-key! :via/http-server [_ {:keys [http-server]}]
-  (when-let [stopping (http/server-stop! http-server {:timeout 1000})]
-    @stopping)) ; Wait for server to stop
+  (when http-server (.stop http-server)))
 
 (defmethod ig/suspend-key! :via/http-server [_ {:keys [ring-handler]}]
   (reset! ring-handler (promise)))
