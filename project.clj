@@ -8,7 +8,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "6.0.0"
+(defproject com.7theta/via "6.1.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
@@ -16,11 +16,11 @@
   :dependencies [[re-frame "1.1.1"]
                  [haslett "0.1.6"]
 
-                 [buddy/buddy-auth "2.2.0" :exclusions [clout]]
+                 [buddy/buddy-sign "3.2.0"]
                  [buddy/buddy-hashers "1.6.0"]
                  [com.cognitect/transit-clj "1.0.324" :exclusions [com.fasterxml.jackson.core/jackson-core]]
 
-                 [luminus/ring-undertow-adapter "1.1.2"]
+                 [luminus/ring-undertow-adapter "1.1.3"]
                  [ring/ring-core "1.8.2" :exclusions [ring/ring-codec]]
                  [ring/ring-defaults "0.3.2"]
                  [ring/ring-anti-forgery "1.3.0"]

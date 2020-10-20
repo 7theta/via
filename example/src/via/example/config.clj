@@ -6,10 +6,7 @@
 ;;; Public
 
 (def config
-  {:via/authenticator
-   {:endpoint (ig/ref :via/endpoint)
-    :query-fn (ig/ref [:via.example/user-store])}
-   :via/endpoint
+  {:via/endpoint
    {}
    :via/events
    {:endpoint (ig/ref :via/endpoint)}
@@ -17,9 +14,6 @@
    {:endpoint (ig/ref :via/endpoint)}
    :via/http-server
    {:ring-handler (ig/ref :via.example/ring-handler)}
-
-   :via.example/user-store
-   nil
 
    :via.example/ring-handler
    {:via-handler (ig/ref :via/endpoint)}
