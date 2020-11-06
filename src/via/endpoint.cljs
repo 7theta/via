@@ -9,7 +9,8 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.defaults :refer [default-via-endpoint protocol-version]]
+  (:require [via.transit.time :as time-handlers]
+            [via.defaults :refer [default-via-endpoint protocol-version]]
             [signum.interceptors :refer [->interceptor]]
             [haslett.client :as ws]
             [haslett.format :as fmt]
@@ -40,7 +41,8 @@
              auto-connect
              auto-reconnect
              max-reconnect-interval
-             connect-opts]
+             connect-opts
+             transit-handlers]
       :or {auto-connect true
            auto-reconnect true
            max-reconnect-interval 5000
@@ -54,7 +56,14 @@
                   :control-ch (atom nil)
                   :connect-state (r/atom nil)
                   :subscriptions (atom {})
-                  :requests (atom {})}
+                  :requests (atom {})
+                  :format (reify fmt/Format
+                            (read  [_ s]
+                              (transit/read (transit/reader :json {:handlers (merge time-handlers/read
+                                                                                    (get transit-handlers :read {}))}) s))
+                            (write [_ v] (transit/write
+                                          (transit/writer :json {:handlers (merge time-handlers/write
+                                                                                  (get transit-handlers :write {}))}) v)))}
         connect-opts (compact
                       (assoc connect-opts
                              :auto-reconnect auto-reconnect
@@ -111,7 +120,7 @@
      (go (try
            (loop [backoff-sq (when auto-reconnect (exponential-seq 2 max-reconnect-interval))]
              (let [return (ws/connect (append-query-params (:url (endpoint)) params)
-                                      {:format fmt/transit})
+                                      {:format (:format (endpoint))})
                    {:keys [socket source sink close-status] :as stream} (<! return)
                    result (if (ws/connected? stream)
                             (do (reset! (:outbound-ch (endpoint)) sink)
@@ -194,13 +203,13 @@
       (js/console.warn "Unknown via connection-context message" (pr-str payload)))))
 
 (defn- decode-downloaded-message
-  [message]
+  [format message]
   (js/Promise.
    (fn [resolve reject]
-     (resolve (fmt/read fmt/transit message)))))
+     (resolve (fmt/read format message)))))
 
 (defn- handle-download
-  [{:keys [url download-url]} handle-message {:keys [payload] :as message}]
+  [{:keys [url download-url format]} handle-message {:keys [payload] :as message}]
   (-> (str download-url "?op=download")
       (js/fetch (clj->js {:headers {"Authorization" (str "Bearer " payload)}}))
       (j/call :then #(if (= 200 (j/get % :status))
@@ -210,7 +219,7 @@
                             (str "Failed to download\n")
                             (js/Error.)
                             (throw))))
-      (j/call :then decode-downloaded-message)
+      (j/call :then (partial decode-downloaded-message format))
       (j/call :then handle-message)
       (j/call :catch #(js/console.warn %))))
 
