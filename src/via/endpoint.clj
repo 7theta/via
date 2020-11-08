@@ -9,13 +9,14 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.transit.time :as time-handlers]
-            [signum.interceptors :refer [->interceptor]]
+  (:require [signum.interceptors :refer [->interceptor]]
+            [tempus.core :as t]
+            [tempus.duration :as td]
+            [tempus.transit :as tt]
             [ring.adapter.undertow.websocket :as ws]
             [cognitect.transit :as transit]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
-            [tick.core :as t]
             [utilis.fn :refer [fsafe]]
             [utilis.logic :refer [xor]]
             [clojure.set :refer [union difference]]
@@ -23,15 +24,11 @@
             [clojure.string :as st])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
-;;; Declarations
-
 (declare send! channels-by-tag disconnect! encode-message decode-message
          handle-effect handle-download handle-connection-context-changed
          run-effects handle-event channels audit-downloads)
 
 (def interceptor)
-
-;;; Integrant
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [max-ws
@@ -55,10 +52,10 @@
                   :downloads-audit-future downloads-audit-future
                   :subscriptions subscriptions
                   :clients clients
-                  :encode (partial encode-message {:handlers (merge time-handlers/write
-                                                              (get transit-handlers :write {}))})
-                  :decode (partial decode-message {:handlers (merge time-handlers/read
-                                                              (get transit-handlers :read {}))})}]
+                  :decode (partial decode-message {:handlers (merge (:read tt/handlers)
+                                                              (get transit-handlers :read {}))})
+                  :encode (partial encode-message {:handlers (merge (:write tt/handlers)
+                                                              (get transit-handlers :write {}))})}]
     (alter-var-root
      #'interceptor
      (constantly
@@ -120,8 +117,6 @@
   [endpoint key]
   (swap! (:subscriptions (endpoint)) dissoc key))
 
-;;; API
-
 (defn send!
   "Asynchronously sends `message` to the client for `client-id`"
   [endpoint message & {:keys [type client-id tag params]
@@ -144,10 +139,8 @@
             (send-to-channel! channel)
 
             (and large-message? (= version 2))
-            (let [expiry (->> :seconds
-                              (t/new-duration download-expiry-seconds)
-                              (t/+ (t/now)))
-                  payload (jwt/encrypt {:exp expiry
+            (let [expiry (t/+ (t/now) (td/seconds download-expiry-seconds))
+                  payload (jwt/encrypt {:exp (t/into :long expiry)
                                         ;; ensure this token is unique
                                         :req (str (java.util.UUID/randomUUID))}
                                        download-secret)]
@@ -201,8 +194,6 @@
   (-> (:clients (endpoint))
       (swap! assoc-in [client-id :connection-context] connection-context)
       (get-in [client-id :connection-context])))
-
-;;; Effects
 
 (defmulti handle-effect (fn [[effect-id _]] effect-id))
 
@@ -268,6 +259,7 @@
   (throw (ex-info "Unknown effect"
                   {:effect effect-id
                    :params (get-in context [:effects effect-id])})))
+
 
 ;;; Private
 

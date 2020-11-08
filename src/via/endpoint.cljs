@@ -9,9 +9,9 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.endpoint
-  (:require [via.transit.time :as time-handlers]
-            [via.defaults :refer [default-via-endpoint protocol-version]]
+  (:require [via.defaults :refer [default-via-endpoint protocol-version]]
             [signum.interceptors :refer [->interceptor]]
+            [tempus.transit :as tt]
             [haslett.client :as ws]
             [haslett.format :as fmt]
             [utilis.fn :refer [fsafe]]
@@ -28,13 +28,9 @@
             [goog.string.format]
             [clojure.string :as st]))
 
-;;; Declarations
-
 (declare connect! disconnect! connected? send! default-via-url exponential-seq send*)
 
 (def interceptor)
-
-;;; Integrant
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [url
@@ -59,11 +55,13 @@
                   :requests (atom {})
                   :format (reify fmt/Format
                             (read  [_ s]
-                              (transit/read (transit/reader :json {:handlers (merge time-handlers/read
-                                                                                    (get transit-handlers :read {}))}) s))
-                            (write [_ v] (transit/write
-                                          (transit/writer :json {:handlers (merge time-handlers/write
-                                                                                  (get transit-handlers :write {}))}) v)))}
+                              (transit/read
+                               (transit/reader :json {:handlers (merge (:read tt/handlers)
+                                                                       (get transit-handlers :read {}))}) s))
+                            (write [_ v]
+                              (transit/write
+                               (transit/writer :json {:handlers (merge (:write tt/handlers)
+                                                                       (get transit-handlers :write {}))}) v)))}
         connect-opts (compact
                       (assoc connect-opts
                              :auto-reconnect auto-reconnect
@@ -91,8 +89,6 @@
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
   (disconnect! endpoint))
-
-;;; API
 
 (declare handle-event handle-reply handle-connection-context handle-download
          append-query-params establish-connection-context)
@@ -178,7 +174,8 @@
     ((fsafe failure-fn) {:status :disconnected})
     (send* endpoint message (assoc options :type type))))
 
-;;; Implementation
+
+;;; Private
 
 (defn- handle-event
   [endpoint type data]
@@ -231,16 +228,10 @@
 
 (defn- append-query-params
   [url query-params]
-  (->> query-params
-       (map (fn [[k v]]
-              (format "%s=%s"
-                      (->string k)
-                      (->string v))))
-       (st/join "&") vector
-       (filter seq)
-       (cons url)
-       (st/join "?")
-       js/encodeURI))
+  (let [query-params (->> query-params
+                          (map (fn [[k v]] (format "%s=%s" (->string k) (->string v))))
+                          (st/join "&") not-empty)]
+    (js/encodeURI (cond-> url query-params (str "?" query-params)))))
 
 (defn- exponential-seq
   ([base max-value]

@@ -1,8 +1,8 @@
 (ns via.example.broadcaster
   (:require [via.endpoint :refer [broadcast!]]
+            [tempus.core :as t]
             [clojure.core.async :refer [chan close! alts! timeout go-loop]]
-            [integrant.core :as ig])
-  (:import [java.time OffsetDateTime]))
+            [integrant.core :as ig]))
 
 ;;; Public
 
@@ -27,7 +27,7 @@
           (let [msg [:via.example/server-broadcast {:event "A periodic broadcast"
                                                     :frequency frequency
                                                     :index i
-                                                    :ts (OffsetDateTime/now)}]]
+                                                    :ts (t/now)}]]
             (println "Sending broadcast" (pr-str msg))
             (broadcast! via-endpoint msg)
             (recur (inc i)))
