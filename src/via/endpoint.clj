@@ -10,11 +10,13 @@
 
 (ns via.endpoint
   (:require [signum.interceptors :refer [->interceptor]]
+            [tempus.core :as t]
+            [tempus.duration :as td]
+            [tempus.transit :as tt]
             [ring.adapter.undertow.websocket :as ws]
             [cognitect.transit :as transit]
             [buddy.sign.jwt :as jwt]
             [buddy.core.nonce :as bn]
-            [tick.core :as t]
             [utilis.fn :refer [fsafe]]
             [utilis.logic :refer [xor]]
             [clojure.set :refer [union difference]]
@@ -22,21 +24,18 @@
             [clojure.string :as st])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
-;;; Declarations
-
-(declare send! channels-by-tag disconnect! encode decode
+(declare send! channels-by-tag disconnect! encode-message decode-message
          handle-effect handle-download handle-connection-context-changed
          run-effects handle-event channels audit-downloads)
 
 (def interceptor)
 
-;;; Integrant
-
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [max-ws
              download-secret
              download-expiry-seconds
-             downloads-audit-interval-seconds]
+             downloads-audit-interval-seconds
+             transit-handlers]
       :or {max-ws (* 4 1024 1024)
            download-secret (bn/random-bytes 32)
            download-expiry-seconds 30
@@ -52,7 +51,11 @@
                   :downloads downloads
                   :downloads-audit-future downloads-audit-future
                   :subscriptions subscriptions
-                  :clients clients}]
+                  :clients clients
+                  :decode (partial decode-message {:handlers (merge (:read tt/handlers)
+                                                              (get transit-handlers :read {}))})
+                  :encode (partial encode-message {:handlers (merge (:write tt/handlers)
+                                                              (get transit-handlers :write {}))})}]
     (alter-var-root
      #'interceptor
      (constantly
@@ -84,7 +87,7 @@
                                               :remote-close (.isCloseInitiatedByRemotePeer ws-channel)}))
              :on-message
              (fn [{:keys [channel data]}]
-               (handle-event endpoint :message (let [{:keys [payload request-id]} (decode data)]
+               (handle-event endpoint :message (let [{:keys [payload request-id]} ((:decode endpoint) data)]
                                                  {:client-id client-id
                                                   :request-id request-id
                                                   :ring-request request
@@ -92,7 +95,7 @@
 
            (and (not (:websocket? request))
                 (= "download" (get-in request [:query-params "op"])))
-           (handle-download downloads download-secret request)
+           (handle-download (fn [] endpoint) downloads download-secret request)
 
            :else {:status 404}))))))
 
@@ -114,51 +117,48 @@
   [endpoint key]
   (swap! (:subscriptions (endpoint)) dissoc key))
 
-;;; API
-
 (defn send!
   "Asynchronously sends `message` to the client for `client-id`"
   [endpoint message & {:keys [type client-id tag params]
                        :or {type :message}
                        :as args}]
-  (if-let [channels (not-empty (channels endpoint args))]
-    (let [{:keys [max-ws
-                  download-secret
-                  download-expiry-seconds
-                  downloads]} (endpoint)
-          message (merge {:type type :payload message} params)
-          encoded-message (encode message)
-          encoded-message-size (count (.getBytes encoded-message))
-          send-to-channel! (partial ws/send encoded-message)
-          large-message? (> encoded-message-size max-ws)]
-      (doseq [{:keys [channel version]} channels]
-        (cond
-          (not large-message?)
-          (send-to-channel! channel)
+  (let [{:keys [max-ws
+                download-secret
+                download-expiry-seconds
+                downloads
+                encode]} (endpoint)]
+    (if-let [channels (not-empty (channels endpoint args))]
+      (let [message (merge {:type type :payload message} params)
+            encoded-message (encode message)
+            encoded-message-size (count (.getBytes encoded-message))
+            send-to-channel! (partial ws/send encoded-message)
+            large-message? (> encoded-message-size max-ws)]
+        (doseq [{:keys [channel version]} channels]
+          (cond
+            (not large-message?)
+            (send-to-channel! channel)
 
-          (and large-message? (= version 2))
-          (let [expiry (->> :seconds
-                            (t/new-duration download-expiry-seconds)
-                            (t/+ (t/now)))
-                payload (jwt/encrypt {:exp expiry
-                                      ;; ensure this token is unique
-                                      :req (str (java.util.UUID/randomUUID))}
-                                     download-secret)]
-            (swap! downloads assoc payload
-                   {:expiry expiry
-                    :message message})
-            (ws/send (encode {:type :download :payload payload}) channel))
+            (and large-message? (= version 2))
+            (let [expiry (t/+ (t/now) (td/seconds download-expiry-seconds))
+                  payload (jwt/encrypt {:exp (t/into :long expiry)
+                                        ;; ensure this token is unique
+                                        :req (str (java.util.UUID/randomUUID))}
+                                       download-secret)]
+              (swap! downloads assoc payload
+                     {:expiry expiry
+                      :message message})
+              (ws/send (encode {:type :download :payload payload}) channel))
 
-          :else
-          (println "warn: unable to send large message to protocol version 1."
-                   {:max-ws max-ws
-                    :encoded-message-size encoded-message-size}))))
-    (when client-id
-      (try (throw (ex-info "warn: no client found to send message to"
-                           {:client-id client-id
-                            :message message}))
-           (catch Exception e
-             (println e))))))
+            :else
+            (println "warn: unable to send large message to protocol version 1."
+                     {:max-ws max-ws
+                      :encoded-message-size encoded-message-size}))))
+      (when client-id
+        (try (throw (ex-info "warn: no client found to send message to"
+                             {:client-id client-id
+                              :message message}))
+             (catch Exception e
+               (println e)))))))
 
 (defn broadcast!
   "Asynchronously sends `message` to all connected clients"
@@ -194,8 +194,6 @@
   (-> (:clients (endpoint))
       (swap! assoc-in [client-id :connection-context] connection-context)
       (get-in [client-id :connection-context])))
-
-;;; Effects
 
 (defmulti handle-effect (fn [[effect-id _]] effect-id))
 
@@ -262,18 +260,19 @@
                   {:effect effect-id
                    :params (get-in context [:effects effect-id])})))
 
+
 ;;; Private
 
-(defn- encode
-  [^String data]
+(defn- encode-message
+  [handlers ^String data]
   (let [out (ByteArrayOutputStream. 4096)]
-    (transit/write (transit/writer out :json) data)
+    (transit/write (transit/writer out :json handlers) data)
     (.toString out)))
 
-(defn- decode
-  [^String data]
+(defn- decode-message
+  [handlers ^String data]
   (let [in (ByteArrayInputStream. (.getBytes data))]
-    (transit/read (transit/reader in :json))))
+    (transit/read (transit/reader in :json handlers))))
 
 (defn- channel-map
   [{:keys [channel connection-context]}]
@@ -316,17 +315,17 @@
     (catch Exception _ nil)))
 
 (defn- download-response
-  [downloads token]
+  [endpoint downloads token]
   (when-let [message (locking downloads
                        (when-let [{:keys [message]} (get @downloads token)]
                          (swap! downloads dissoc token)
                          message))]
     {:status 200
-     :body (ByteArrayInputStream. (.getBytes (encode message)))
+     :body (ByteArrayInputStream. (.getBytes ((:encode (endpoint)) message)))
      :headers {"Content-Type" "application/octet-stream"}}))
 
 (defn- handle-download
-  [downloads download-secret request]
+  [endpoint downloads download-secret request]
   (when-let [authorization (get-in request [:headers "authorization"])]
     (let [[_ token] (st/split authorization #" ")]
       (cond
@@ -336,7 +335,7 @@
         (not (validate-download-token token download-secret))
         {:status 403 :body "Token is corrupt or invalid."}
 
-        :else (download-response downloads token)))))
+        :else (download-response endpoint downloads token)))))
 
 (def ^:private known-effects
   [:via/replace-connection-context

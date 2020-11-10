@@ -11,6 +11,7 @@
 (ns via.endpoint
   (:require [via.defaults :refer [default-via-endpoint protocol-version]]
             [signum.interceptors :refer [->interceptor]]
+            [tempus.transit :as tt]
             [haslett.client :as ws]
             [haslett.format :as fmt]
             [utilis.fn :refer [fsafe]]
@@ -27,20 +28,17 @@
             [goog.string.format]
             [clojure.string :as st]))
 
-;;; Declarations
-
 (declare connect! disconnect! connected? send! default-via-url exponential-seq send*)
 
 (def interceptor)
-
-;;; Integrant
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [url
              auto-connect
              auto-reconnect
              max-reconnect-interval
-             connect-opts]
+             connect-opts
+             transit-handlers]
       :or {auto-connect true
            auto-reconnect true
            max-reconnect-interval 5000
@@ -54,7 +52,16 @@
                   :control-ch (atom nil)
                   :connect-state (r/atom nil)
                   :subscriptions (atom {})
-                  :requests (atom {})}
+                  :requests (atom {})
+                  :format (reify fmt/Format
+                            (read  [_ s]
+                              (transit/read
+                               (transit/reader :json {:handlers (merge (:read tt/handlers)
+                                                                       (get transit-handlers :read {}))}) s))
+                            (write [_ v]
+                              (transit/write
+                               (transit/writer :json {:handlers (merge (:write tt/handlers)
+                                                                       (get transit-handlers :write {}))}) v)))}
         connect-opts (compact
                       (assoc connect-opts
                              :auto-reconnect auto-reconnect
@@ -83,8 +90,6 @@
   [_ endpoint]
   (disconnect! endpoint))
 
-;;; API
-
 (declare handle-event handle-reply handle-connection-context handle-download
          append-query-params establish-connection-context)
 
@@ -111,7 +116,7 @@
      (go (try
            (loop [backoff-sq (when auto-reconnect (exponential-seq 2 max-reconnect-interval))]
              (let [return (ws/connect (append-query-params (:url (endpoint)) params)
-                                      {:format fmt/transit})
+                                      {:format (:format (endpoint))})
                    {:keys [socket source sink close-status] :as stream} (<! return)
                    result (if (ws/connected? stream)
                             (do (reset! (:outbound-ch (endpoint)) sink)
@@ -169,7 +174,8 @@
     ((fsafe failure-fn) {:status :disconnected})
     (send* endpoint message (assoc options :type type))))
 
-;;; Implementation
+
+;;; Private
 
 (defn- handle-event
   [endpoint type data]
@@ -194,13 +200,13 @@
       (js/console.warn "Unknown via connection-context message" (pr-str payload)))))
 
 (defn- decode-downloaded-message
-  [message]
+  [format message]
   (js/Promise.
    (fn [resolve reject]
-     (resolve (fmt/read fmt/transit message)))))
+     (resolve (fmt/read format message)))))
 
 (defn- handle-download
-  [{:keys [url download-url]} handle-message {:keys [payload] :as message}]
+  [{:keys [url download-url format]} handle-message {:keys [payload] :as message}]
   (-> (str download-url "?op=download")
       (js/fetch (clj->js {:headers {"Authorization" (str "Bearer " payload)}}))
       (j/call :then #(if (= 200 (j/get % :status))
@@ -210,7 +216,7 @@
                             (str "Failed to download\n")
                             (js/Error.)
                             (throw))))
-      (j/call :then decode-downloaded-message)
+      (j/call :then (partial decode-downloaded-message format))
       (j/call :then handle-message)
       (j/call :catch #(js/console.warn %))))
 
@@ -222,16 +228,10 @@
 
 (defn- append-query-params
   [url query-params]
-  (->> query-params
-       (map (fn [[k v]]
-              (format "%s=%s"
-                      (->string k)
-                      (->string v))))
-       (st/join "&") vector
-       (filter seq)
-       (cons url)
-       (st/join "?")
-       js/encodeURI))
+  (let [query-params (->> query-params
+                          (map (fn [[k v]] (format "%s=%s" (->string k) (->string v))))
+                          (st/join "&") not-empty)]
+    (js/encodeURI (cond-> url query-params (str "?" query-params)))))
 
 (defn- exponential-seq
   ([base max-value]
