@@ -211,7 +211,7 @@
       (js/fetch (clj->js {:headers {"Authorization" (str "Bearer " payload)}}))
       (j/call :then #(if (= 200 (j/get % :status))
                        (j/call % :text)
-                       (->> (cljs.pprint/pprint message)
+                       (->> (println message)
                             (with-out-str)
                             (str "Failed to download\n")
                             (js/Error.)
