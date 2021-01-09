@@ -8,16 +8,16 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "6.2.1"
+(defproject com.7theta/via "6.2.2"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[re-frame "1.1.1"]
+  :dependencies [[re-frame "1.1.2"]
                  [haslett "0.1.6"]
 
-                 [buddy/buddy-sign "3.2.0"]
-                 [buddy/buddy-hashers "1.6.0"]
+                 [buddy/buddy-sign "3.3.0"]
+                 [buddy/buddy-hashers "1.7.0"]
                  [com.cognitect/transit-clj "1.0.324" :exclusions [com.fasterxml.jackson.core/jackson-core]]
 
                  [luminus/ring-undertow-adapter "1.1.3"]
@@ -29,7 +29,7 @@
 
                  [com.7theta/distantia "0.2.2"]
                  [com.7theta/signum "3.0.2"]
-                 [com.7theta/tempus "0.1.0"]
+                 [com.7theta/tempus "0.2.0"]
                  [com.7theta/utilis "1.10.0"]
 
                  [integrant "0.8.0"]]
@@ -39,7 +39,7 @@
                    :env {:malli "true"}
                    :plugins [[lein-environ "0.4.0"]]
                    :dependencies [[binaryage/devtools "1.0.2"]
-                                  [thheller/shadow-cljs "2.11.7"]
+                                  [thheller/shadow-cljs "2.11.12"]
                                   [integrant/repl "0.3.2"]
                                   [org.clojure/clojurescript "1.10.773"]
                                   [metosin/malli "0.2.1"]]}}
