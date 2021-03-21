@@ -144,10 +144,12 @@
   [endpoint]
   (when (connected? endpoint)
     (let [endpoint (endpoint)]
-      (handle-event endpoint :close {:status :normal})
-      (close! @(:control-ch endpoint))
-      (reset! (:control-ch endpoint) nil)
-      (reset! (:outbound-ch endpoint) nil))))
+      (when (and @(:control-ch endpoint)
+                 @(:outbound-ch endpoint))
+        (handle-event endpoint :close {:status :normal})
+        (close! @(:control-ch endpoint))
+        (reset! (:control-ch endpoint) nil)
+        (reset! (:outbound-ch endpoint) nil)))))
 
 (defn connected?
   [endpoint]
