@@ -1,16 +1,16 @@
 (ns via.example.subs
   (:require [via.endpoint :as via]
-            [signum.atom :as s]
+            [signum.signal :as s]
             [signum.subs :refer [reg-sub subscribe]]
             [utilis.fn :refer [fsafe]]))
 
 (reg-sub
  :api.example/my-counter
  (fn [query-v]
-   (let [counter (s/atom 0)
+   (let [counter (s/signal 0)
          counter-loop (future
                         (loop []
-                          (swap! counter inc)
+                          (s/alter! counter inc)
                           (Thread/sleep 1000)
                           (recur)))]
      {:counter counter
@@ -44,11 +44,11 @@
                                     (take (rand-int (* 10 1024 1024)))
                                     (map char)
                                     (apply str))
-         value (s/atom (generate-large-value))]
+         value (s/signal (generate-large-value))]
      {:ft (future
             (loop []
               (Thread/sleep 10000)
-              (reset! value (generate-large-value))
+              (s/alter! value (constantly (generate-large-value)))
               (recur)))
       :value value}))
  (fn [{:keys [ft]} _]
