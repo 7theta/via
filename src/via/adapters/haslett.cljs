@@ -7,19 +7,12 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.events
-  (:require [via.endpoint :as via]
-            [signum.events :as se]
-            [integrant.core :as ig]))
+(ns via.adapters.haslett
+  (:refer-clojure :exclude [subs])
+  (:require [via.adapter :as adapter]
+            [haslett.client :as ws]
+            [haslett.format :as fmt]))
 
-(defmethod ig/init-key :via/events
-  [_ {:keys [endpoint]}]
-
-
-  )
-
-(defmethod ig/halt-key! :via/events
-  [_ {:keys [endpoint ]}]
-
-
+(defn websocket-adapter
+  []
   )

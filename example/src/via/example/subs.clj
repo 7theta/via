@@ -1,6 +1,5 @@
 (ns via.example.subs
-  (:require [via.endpoint :as via]
-            [signum.signal :as s]
+  (:require [signum.signal :as s]
             [signum.subs :refer [reg-sub subscribe]]
             [utilis.fn :refer [fsafe]]))
 
@@ -22,14 +21,12 @@
 
 (reg-sub
  :api.example/auto-increment-count
- [#'via/interceptor]
  (fn [query-v]
    (let [value @(subscribe [:api.example/my-counter])]
      [value ((fsafe inc) value)])))
 
 (reg-sub
  :api.example/auto-increment-string
- [#'via/interceptor]
  (fn [[_ some-text]]
    (let [value @(subscribe [:api.example/my-counter])]
      {:value value
@@ -37,7 +34,6 @@
 
 (reg-sub
  :api.example/large-message
- [#'via/interceptor]
  (fn [_]
    (let [generate-large-value #(->> (partial rand-int 128)
                                     (repeatedly)

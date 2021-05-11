@@ -8,30 +8,38 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.http-server
-  (:require [ring.adapter.undertow :refer [run-undertow]]
-            [ring.adapter.undertow.middleware.session :refer [wrap-session]]
+  (:require [aleph.http :as http]
             [utilis.fn :refer [fsafe]]
             [integrant.core :as ig]
-            [clojure.set :as set]))
+            [clojure.set :as set])
+  (:import [java.net InetAddress]))
 
-(defmethod ig/init-key :via/http-server [_ opts]
-  (let [ring-handler (atom (delay (:ring-handler opts)))]
+(defmethod ig/init-key :via/http-server
+  [_ opts]
+  (let [ring-handler (atom (delay (:ring-handler opts)))
+        {:keys [http-host http-port]} opts]
     {:ring-handler ring-handler
-     :http-server (run-undertow (fn [req] ((fsafe @@ring-handler) req))
-                                (merge
-                                 {:http2? true}
-                                 (-> opts
-                                     (dissoc :ring-handler)
-                                     (set/rename-keys {:http-port :port
-                                                       :https-port :ssl-port}))))}))
+     :http-server (http/start-server
+                   (fn [request] ((fsafe @@ring-handler) request))
+                   (cond-> opts
+                     true (dissoc :ring-handler :http-port)
 
-(defmethod ig/halt-key! :via/http-server [_ {:keys [http-server]}]
-  (when http-server (.stop http-server)))
+                     (and (not http-host) http-port)
+                     (assoc :port http-port)
 
-(defmethod ig/suspend-key! :via/http-server [_ {:keys [ring-handler]}]
+                     (and http-host http-port)
+                     (assoc :socket-address (InetAddress/getByName (str http-host ":" http-port)))))}))
+
+(defmethod ig/halt-key! :via/http-server
+  [_ {:keys [http-server]}]
+  (when http-server (.close http-server)))
+
+(defmethod ig/suspend-key! :via/http-server
+  [_ {:keys [ring-handler]}]
   (reset! ring-handler (promise)))
 
-(defmethod ig/resume-key :via/http-server [key opts old-opts old-impl]
+(defmethod ig/resume-key :via/http-server
+  [key opts old-opts old-impl]
   (if (= (dissoc opts :ring-handler) (dissoc old-opts :ring-handler))
     (do (deliver @(:ring-handler old-impl) (:ring-handler opts))
         old-impl)

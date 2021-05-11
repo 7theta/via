@@ -7,7 +7,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "7.0.0"
+(defproject com.7theta/via "8.0.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "MIT License"
@@ -18,6 +18,9 @@
                  [buddy/buddy-sign "3.3.0"]
                  [buddy/buddy-hashers "1.7.0"]
                  [com.cognitect/transit-clj "1.0.324" :exclusions [com.fasterxml.jackson.core/jackson-core]]
+                 [org.clojure/core.async "1.3.618"]
+
+                 [aleph "0.4.7-alpha7"]
 
                  [luminus/ring-undertow-adapter "1.2.1"]
                  [ring/ring-core "1.9.3" :exclusions [ring/ring-codec]]
@@ -27,7 +30,7 @@
                  [environ "1.2.0"]
 
                  [com.7theta/distantia "0.2.2"]
-                 [com.7theta/signum "4.0.0"]
+                 [com.7theta/signum "4.1.0"]
                  [com.7theta/tempus "0.3.1"]
                  [com.7theta/utilis "1.12.2"]
 
