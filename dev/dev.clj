@@ -12,6 +12,7 @@
   not be included in a production build of the application."
   (:require [via.example.config :refer [config]]
             [via.core :as via]
+            [via.endpoint :as ve]
 
             [integrant.core :as ig]
 
@@ -26,7 +27,11 @@
             [clojure.test :refer [run-tests run-all-tests]]
             [clojure.pprint :refer [pprint]]
             [clojure.reflect :refer [reflect]]
-            [signum.events :as se]))
+
+            [signum.events :as se]
+            [signum.subs :as ss]
+            [via.subs :as vs]
+            [signum.signal :as sig]))
 
 (disable-reload! (find-ns 'integrant.core))
 
@@ -59,6 +64,7 @@
   (when-let [system @peer-1] (ig/halt! system))
   (reset! peer-1
           (ig/init {:via/endpoint {:events #{:foo.bar/baz}
+                                   :subs #{:foo.bar/sub}
                                    :event-listeners {:default (partial default-event-listener :peer-1)}}
                     :via/events {:endpoint (ig/ref :via/endpoint)}
                     :via/subs {:endpoint (ig/ref :via/endpoint)}
@@ -85,11 +91,30 @@
    {:via/reply {:status 200
                 :body {:handled event}}}))
 
+(def counter (sig/signal 0))
+
+(ss/reg-sub
+ :foo.bar/sub
+ (fn [query]
+   {:sub/response {:query query
+                   :counter @counter}}))
+
 (comment
 
-  (do (start-peer-1) (start-peer-2))
+  (dotimes [_ 100]
+    (sig/alter! counter inc))
 
-  @(via/dispatch (:via/endpoint @peer-2) [:foo.bar/baz])
+  (do (start-peer-1)
+      (start-peer-2)
+      (let [endpoint (:via/endpoint @peer-2)
+            peer-id (ve/first-peer endpoint)]
+        (println :via/dispatch-test @(via/dispatch endpoint peer-id [:foo.bar/baz]))
+        (let [sub (vs/subscribe endpoint peer-id [:foo.bar/sub])]
+          (add-watch sub ::sub
+                     (fn [_ _ _ value]
+                       (println :via/got-subscribe-value value)))
+
+          )))
 
 
   )

@@ -107,9 +107,9 @@
 (defn disconnect
   [endpoint peer-id]
   (let [peer (get @(adapter/peers (endpoint)) peer-id)]
+    (handle-event endpoint :close peer)
     (adapter/disconnect (endpoint) peer-id)
-    (swap! (adapter/peers (endpoint)) dissoc peer-id)
-    (handle-event endpoint :close peer)))
+    (swap! (adapter/peers (endpoint)) dissoc peer-id)))
 
 (defn add-event-listener
   [endpoint key listener]
