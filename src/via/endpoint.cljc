@@ -13,6 +13,7 @@
             #?(:cljs [via.adapters.haslett :as haslett])
             [via.adapter :as adapter]
             [via.util.id :refer [uuid]]
+            [via.defaults :as defaults]
             [signum.fx :as sfx]
             [signum.events :as se]
             [tempus.core :as t]
@@ -35,10 +36,25 @@
          id-seq->map)
 
 (defmethod ig/init-key :via/endpoint
-  [_ {:keys [transit-handlers adapter adapter-options peers events subs event-listeners]
+  [_ {:keys [peers
+             events
+             subs
+             transit-handlers
+             event-listeners
+             adapter
+             adapter-options
+             heartbeat-interval
+             heartbeat-enabled]
       :or {adapter #?(:clj aleph/websocket-adapter
-                      :cljs haslett/websocket-adapter)}}]
-  (let [endpoint (adapter (merge
+                      :cljs haslett/websocket-adapter)
+           heartbeat-interval 30000
+           heartbeat-enabled true}}]
+  (let [events (set (concat events
+                            [:via.session-context/replace
+                             :via.session-context/merge
+                             :via.endpoint/heartbeat]))
+        subs (set subs)
+        endpoint (adapter (merge
                            {:event-listeners (atom (map-vals (fn [handler]
                                                                {(uuid) handler})
                                                              event-listeners))
@@ -50,7 +66,9 @@
                             :handle-message (fn [& args] (apply handle-message args))
                             :handle-connect (fn [& args] (apply handle-connect args))
                             :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
-                            :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})}
+                            :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
+                            :heartbeat-interval heartbeat-interval
+                            :heartbeat-enabled heartbeat-enabled}
                            adapter-options))]
     (swap! endpoints conj endpoint)
     (doseq [peer-address peers]
@@ -73,7 +91,9 @@
                                       on-timeout timeout]
                                :or {type :event
                                     timeout 30000}}]
-  (let [message (merge {:type type :payload message} params)]
+  (let [message (merge (when type {:type type})
+                       (when message {:payload message})
+                       params)]
     (if (or on-success on-failure)
       (let [request-id (uuid)
             message (merge message
@@ -107,9 +127,15 @@
 (defn disconnect
   [endpoint peer-id]
   (let [peer (get @(adapter/peers (endpoint)) peer-id)]
+    (when-let [heartbeat-timer (:heartbeat-timer peer)]
+      (timer/cancel heartbeat-timer))
     (handle-event endpoint :close peer)
     (adapter/disconnect (endpoint) peer-id)
     (swap! (adapter/peers (endpoint)) dissoc peer-id)))
+
+(defn first-peer
+  [endpoint]
+  (ffirst @(adapter/peers (endpoint))))
 
 (defn add-event-listener
   [endpoint key listener]
@@ -125,9 +151,32 @@
                               (get @(adapter/event-listeners (endpoint)) :default))]
     (handler [key event])))
 
+(defn session-context
+  ([] (session-context (first @endpoints)))
+  ([endpoint] (session-context endpoint (first-peer endpoint)))
+  ([endpoint peer-id]
+   (-> @(adapter/peers (endpoint))
+       (get peer-id)
+       :session-context)))
+
 (defn update-session-context
-  [endpoint peer-id f & args]
-  (swap! (adapter/event-listeners (endpoint)) update-in [peer-id :session-context] #(apply f % args)))
+  ([endpoint peer-id f]
+   (update-session-context endpoint peer-id true f))
+  ([endpoint peer-id sync f]
+   (let [peers (adapter/peers (endpoint))]
+     (when (contains? @peers peer-id)
+       (let [session-context (-> peers
+                                 (swap! update-in [peer-id :session-context] f)
+                                 (get peer-id)
+                                 :session-context)]
+         (handle-event endpoint :via.endpoint.session-context/updated session-context)
+         (when sync
+           (let [event-handler-args {:peer-id peer-id :session-context session-context}]
+             (send endpoint peer-id [:via.session-context/replace {:session-context session-context :sync false}]
+                   :on-success #(handle-event endpoint :via.endpoint.session-context.update/on-success (assoc event-handler-args :reply %))
+                   :on-failure #(handle-event endpoint :via.endpoint.session-context.update/on-failure (assoc event-handler-args :reply %))
+                   :on-timeout #(handle-event endpoint :via.endpoint.session-context.update/on-timeout event-handler-args)
+                   :timeout defaults/request-timeout))))))))
 
 (defn merge-context
   [endpoint context]
@@ -153,6 +202,19 @@
   [endpoint event-id]
   (contains? @(adapter/events (endpoint)) event-id))
 
+(defn heartbeat
+  [endpoint peer-id]
+  (when (adapter/opt (endpoint) :heartbeat-enabled)
+    (when-let [heartbeat-interval (adapter/opt (endpoint) :heartbeat-interval)]
+      (when-let [heartbeat-timer (get-in @(adapter/peers (endpoint)) [peer-id :heartbeat-timer])]
+        (timer/cancel heartbeat-timer))
+      (swap! (adapter/peers (endpoint)) assoc-in [peer-id :heartbeat-timer]
+             (timer/run-after
+              (fn []
+                (send endpoint peer-id [:via.endpoint/heartbeat])
+                (heartbeat endpoint peer-id))
+              heartbeat-interval)))))
+
 (defn connect
   [endpoint peer-address]
   (let [connection (adapter/connect (endpoint) peer-address)
@@ -161,11 +223,15 @@
                                                    :connection connection
                                                    :request {:peer-id peer-id
                                                              :peer-address peer-address}})
+    (heartbeat endpoint peer-id)
     peer-id))
 
-(defn first-peer
-  [endpoint]
-  (ffirst @(adapter/peers (endpoint))))
+(defn send-reply
+  [endpoint peer-id request-id {:keys [status body]}]
+  (send endpoint peer-id body
+        :type :reply
+        :params {:status status
+                 :request-id request-id}))
 
 ;;; Effect Handlers
 
@@ -191,24 +257,48 @@
 
 (sfx/reg-fx
  :via/reply
- (fn [{:keys [endpoint request]} {:keys [status body]}]
+ (fn [{:keys [endpoint request event]} {:keys [status body] :as message}]
    (when (not status)
      (throw (ex-info "A status must be provided in a :via/reply"
                      {:eg {:status 200}})))
-   (send endpoint (:peer-id request) body
-         :type :reply
-         :params {:status status
-                  :request-id (:request-id request)})))
+   (if-let [request-id (:request-id request)]
+     (send-reply endpoint (:peer-id request) request-id message)
+     (handle-event endpoint :via.endpoint.outbound-reply/unhandled
+                   {:reply (merge {:type :reply
+                                   :reply-to event
+                                   :status status}
+                                  (when body {:payload body}))}))))
 
 (sfx/reg-fx
  :via.session-context/replace
- (fn [{:keys [endpoint request]} session-context]
-   (update-session-context endpoint (:peer-id request) (constantly session-context))))
+ (fn [{:keys [endpoint request]} {:keys [session-context sync]}]
+   (update-session-context endpoint (:peer-id request) sync (constantly session-context))))
 
 (sfx/reg-fx
  :via.session-context/merge
- (fn [{:keys [endpoint request]} session-context]
-   (update-session-context endpoint (:peer-id request) merge session-context)))
+ (fn [{:keys [endpoint request]} {:keys [session-context sync]}]
+   (update-session-context endpoint (:peer-id request) sync #(merge % session-context))))
+
+;;; Event Handlers
+
+(se/reg-event
+ :via.session-context/replace
+ (fn [_ [_ {:keys [session-context sync]}]]
+   {:via.session-context/replace {:session-context session-context
+                                  :sync sync}
+    :via/reply {:status 200}}))
+
+(se/reg-event
+ :via.session-context/merge
+ (fn [_ [_ {:keys [session-context sync]}]]
+   {:via.session-context/merge {:session-context session-context
+                                :sync sync}
+    :via/reply {:status 200}}))
+
+(se/reg-event
+ :via.endpoint/heartbeat
+ (fn [_ _]
+   {:via/reply {:status 200}}))
 
 ;;; Implementation
 
@@ -223,18 +313,6 @@
   (let [in (ByteArrayInputStream. (.getBytes data))]
     (transit/read (transit/reader in :json handlers))))
 
-(defn- handle-remote-event
-  [endpoint request {:keys [payload] :as message}]
-  (let [[event-id & _ :as event] payload]
-    (cond
-      (not (event? endpoint event-id))
-      (handle-event endpoint :unknown-remote-event {:message message})
-
-      (not (se/event? event-id))
-      (handle-event endpoint :unknown-signum-event {:message message})
-
-      :else (se/dispatch {:endpoint endpoint :request request} event))))
-
 (defn- handle-reply
   [endpoint reply]
   (if-let [request (get @(adapter/requests (endpoint)) (:request-id reply))]
@@ -246,7 +324,30 @@
                   :cljs (catch js/Error e
                           (js/console.error "Unhandled exception in reply handler" e))))
           (swap! (adapter/requests (endpoint)) dissoc (:request-id reply))))
-    (handle-event endpoint :unhandled-reply {:reply reply})))
+    (handle-event endpoint :via.endpoint.inbound-reply/unhandled {:reply reply})))
+
+(defn- send-unknown-event-reply
+  [endpoint peer-id message]
+  (when-let [request-id (:request-id message)]
+    (send-reply endpoint peer-id
+                request-id {:status 400
+                            :body {:error :via.endpoint/unknown-event}})))
+
+(defn- handle-remote-event
+  [endpoint request {:keys [payload] :as message}]
+  (let [[event-id & _ :as event] payload]
+    (cond
+      (not (event? endpoint event-id))
+      (do (handle-event endpoint :via.endpoint/unknown-remote-event {:message message})
+          (send-unknown-event-reply endpoint (:peer-id request) message))
+
+      (not (se/event? event-id))
+      (do (handle-event endpoint :via.endpoint/unknown-signum-event {:message message})
+          (send-unknown-event-reply endpoint (:peer-id request) message))
+
+      :else (se/dispatch {:endpoint endpoint
+                          :request request
+                          :event event} event))))
 
 (defn- handle-message
   [endpoint request message]

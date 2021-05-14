@@ -11,3 +11,4 @@
 
 (def default-via-endpoint "/via")
 (def protocol-version 2)
+(def request-timeout 10000)

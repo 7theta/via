@@ -11,6 +11,7 @@
   (:require [via.endpoint :as via]
             [via.adapter :as adapter]
             [via.util.id :refer [uuid]]
+            [via.defaults :as defaults]
             [distantia.core :refer [patch]]
             [signum.events :as se]
             [signum.subs :as ss]
@@ -84,7 +85,7 @@
                           :on-success (reply-handler :via.subs.subscribe/success)
                           :on-failure (reply-handler :via.subs.subscribe/failure)
                           :on-timeout (reply-handler :via.subs.subscribe/timeout)
-                          :timeout 10000))
+                          :timeout defaults/request-timeout))
               signal))
           (fn [signal _] @signal))
          true))

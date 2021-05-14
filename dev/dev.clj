@@ -78,6 +78,7 @@
   (when-let [system @peer-2] (ig/halt! system))
   (reset! peer-2
           (ig/init {:via/endpoint {:peers #{"ws://localhost:5000/via"}
+                                   :heartbeat-interval 5000
                                    :event-listeners {:default (partial default-event-listener :peer-2)}}
                     :via/events {:endpoint (ig/ref :via/endpoint)}
                     :via/subs {:endpoint (ig/ref :via/endpoint)}
@@ -101,20 +102,21 @@
 
 (comment
 
-  (dotimes [_ 100]
-    (sig/alter! counter inc))
+  (sig/alter! counter inc)
 
   (do (start-peer-1)
       (start-peer-2)
       (let [endpoint (:via/endpoint @peer-2)
             peer-id (ve/first-peer endpoint)]
-        (println :via/dispatch-test @(via/dispatch endpoint peer-id [:foo.bar/baz]))
+        (ve/update-session-context endpoint peer-id (constantly {:foo :bar}))
+        (println :via/dispatch-success-test @(via/dispatch endpoint peer-id [:foo.bar/baz]))
+        (println :via/dispatch-failure-test (try @(via/dispatch endpoint peer-id [:foo.bar/baz2])
+                                                 (catch Exception e (ex-data e))))
         (let [sub (vs/subscribe endpoint peer-id [:foo.bar/sub])]
           (add-watch sub ::sub
                      (fn [_ _ _ value]
-                       (println :via/got-subscribe-value value)))
-
-          )))
+                       (println :via/got-subscribe-value value)))))
+      )
 
 
   )
