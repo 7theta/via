@@ -12,3 +12,5 @@
 (def default-via-endpoint "/via")
 (def protocol-version 2)
 (def request-timeout 10000)
+(def heartbeat-interval 30000)
+(def max-reconnect-interval 5000)

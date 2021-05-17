@@ -32,7 +32,8 @@
 
 (declare encode-message decode-message
          connect disconnect
-         handle-message handle-connect handle-event
+         handle-connect handle-disconnect
+         handle-message handle-event
          id-seq->map)
 
 (defmethod ig/init-key :via/endpoint
@@ -47,7 +48,7 @@
              heartbeat-enabled]
       :or {adapter #?(:clj aleph/websocket-adapter
                       :cljs haslett/websocket-adapter)
-           heartbeat-interval 30000
+           heartbeat-interval defaults/heartbeat-interval
            heartbeat-enabled true}}]
   (let [events (set (concat events
                             [:via.session-context/replace
@@ -64,6 +65,7 @@
                             :requests (atom {})
                             :context (atom {})
                             :handle-message (fn [& args] (apply handle-message args))
+                            :handle-disconnect (fn [& args] (apply handle-disconnect args))
                             :handle-connect (fn [& args] (apply handle-connect args))
                             :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
                             :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
@@ -126,12 +128,7 @@
 
 (defn disconnect
   [endpoint peer-id]
-  (let [peer (get @(adapter/peers (endpoint)) peer-id)]
-    (when-let [heartbeat-timer (:heartbeat-timer peer)]
-      (timer/cancel heartbeat-timer))
-    (handle-event endpoint :close peer)
-    (adapter/disconnect (endpoint) peer-id)
-    (swap! (adapter/peers (endpoint)) dissoc peer-id)))
+  (adapter/disconnect (endpoint) peer-id))
 
 (defn first-peer
   [endpoint]
@@ -216,15 +213,16 @@
               heartbeat-interval)))))
 
 (defn connect
-  [endpoint peer-address]
-  (let [connection (adapter/connect (endpoint) peer-address)
-        peer-id (uuid)]
-    ((adapter/handle-connect (endpoint)) endpoint {:id peer-id
-                                                   :connection connection
-                                                   :request {:peer-id peer-id
-                                                             :peer-address peer-address}})
-    (heartbeat endpoint peer-id)
-    peer-id))
+  ([endpoint peer-address] (connect endpoint peer-address (uuid)))
+  ([endpoint peer-address peer-id]
+   (when-let [connection (adapter/connect (endpoint) peer-address)]
+     ((adapter/handle-connect (endpoint)) endpoint {:id peer-id
+                                                    :connection connection
+                                                    :role :originator
+                                                    :request {:peer-id peer-id
+                                                              :peer-address peer-address}})
+     (heartbeat endpoint peer-id)
+     peer-id)))
 
 (defn send-reply
   [endpoint peer-id request-id {:keys [status body]}]
@@ -357,12 +355,51 @@
     (condp = (:type message)
       :event (handle-remote-event endpoint request message)
       :reply (handle-reply endpoint message)
-      (handle-event endpoint :unhandled-message {:message message}))))
+      (handle-event endpoint :via.endpoint/unhandled-message {:message message}))))
 
 (defn- handle-connect
   [endpoint peer]
   (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
-  (handle-event endpoint :open peer))
+  (handle-event endpoint :via.endpoint.peer/connect peer))
+
+(defn- cancel-reconnect-task
+  [endpoint peer-id]
+  (when-let [reconnect-task (get-in @(adapter/peers (endpoint)) [peer-id :reconnect-task])]
+    (timer/cancel reconnect-task))
+  (swap! (adapter/peers (endpoint)) update peer-id dissoc :reconnect-task))
+
+
+(defn- remove-peer
+  [endpoint peer-id]
+  (let [peer (get @(adapter/peers (endpoint)) peer-id)]
+    (when-let [heartbeat-timer (:heartbeat-timer peer)]
+      (timer/cancel heartbeat-timer))
+    (cancel-reconnect-task endpoint peer-id)
+    (swap! (adapter/peers (endpoint)) dissoc peer-id)
+    (handle-event endpoint :via.endpoint.peer/remove peer)))
+
+(defn- reconnect
+  ([endpoint peer-address peer-id]
+   (reconnect endpoint peer-address peer-id 50))
+  ([endpoint peer-address peer-id interval]
+   (cancel-reconnect-task endpoint peer-id)
+   (if (not (connect endpoint peer-address peer-id))
+     (swap! (adapter/peers (endpoint))
+            assoc-in [peer-id :reconnect-task]
+            (timer/run-after
+             #(reconnect endpoint peer-address peer-id
+                         (min (* 2 interval)
+                              defaults/max-reconnect-interval))
+             (min interval defaults/max-reconnect-interval)))
+     (cancel-reconnect-task endpoint peer-id))))
+
+(defn- handle-disconnect
+  [endpoint {:keys [role request] :as peer}]
+  (handle-event endpoint :via.endpoint.peer/disconnect peer)
+  (if (and (= :originator role)
+           (not (false? (:reconnect peer))))
+    (reconnect endpoint (:peer-address request) (:id peer))
+    (remove-peer endpoint (:id peer))))
 
 (defn- id-seq->map
   [ids]

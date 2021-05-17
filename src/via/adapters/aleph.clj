@@ -26,7 +26,8 @@
 
 (defn websocket-adapter
   [{:keys [websocket-options] :as adapter-opts}]
-  (let [{:keys [max-frame-size] :as websocket-options} (merge {:max-frame-size (* 4 1024 1024)} websocket-options)
+  (let [{:keys [max-frame-size] :as websocket-options} (merge {:compression? true
+                                                               :max-frame-size (* 4 1024 1024)} websocket-options)
         endpoint (reify adapter/Endpoint
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
@@ -37,7 +38,7 @@
                      (connect* endpoint address))
                    (shutdown [endpoint]
                      ))]
-    (adapter/add-event-listener endpoint :open (partial handle-connection endpoint))
+    (adapter/add-event-listener endpoint :via.endpoint.peer/connect (partial handle-connection endpoint))
     (fn ([] endpoint)
       ([request]
        (handle-request endpoint request :websocket-options websocket-options)))))
@@ -50,10 +51,13 @@
 
 (defn- connect*
   [endpoint address]
-  @(http/websocket-client address))
+  (try @(http/websocket-client address)
+       (catch Exception e
+         nil)))
 
 (defn- disconnect*
   [endpoint peer-id]
+  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] false)
   (.close (get-in @(adapter/peers endpoint) [peer-id :connection])))
 
 (defn- handle-request
@@ -66,6 +70,7 @@
                   ((adapter/handle-connect endpoint) (constantly endpoint)
                    {:id peer-id
                     :connection socket
+                    :role :terminator
                     :request (assoc request :peer-id peer-id)})))))
 
 (defn- handle-connection
@@ -74,11 +79,13 @@
     (when (not peer-id)
       (throw (ex-info "No peer-id on request"
                       {:request request})))
+    (swap! (adapter/peers endpoint) update peer-id dissoc :reconnect)
     (d/loop []
       (d/chain (s/take! connection ::drained)
                (fn [msg]
                  (if (identical? ::drained msg)
-                   ::drained
+                   (do ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))
+                       ::drained)
                    (try ((adapter/handle-message endpoint)
                          (constantly endpoint)
                          (assoc request :peer-id peer-id)

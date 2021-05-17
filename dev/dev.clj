@@ -54,33 +54,40 @@
 (defn default-event-listener
   [prefix [event-id event]]
   (condp = event-id
-    :open (println prefix event-id (:id event))
-    :close (println prefix event-id (:id event))
+    :via.endpoint.peer/connect (println prefix event-id (:id event))
+    :via.endpoint.peer/disconnect (println prefix event-id (:id event))
+    :via.endpoint.peer/remove (println prefix event-id (:id event))
     (println prefix event-id event)))
 
 (defonce peer-1 (atom nil))
+(defn stop-peer-1
+  []
+  (when-let [system @peer-1]
+    (ig/halt! system)))
 (defn start-peer-1
   []
-  (when-let [system @peer-1] (ig/halt! system))
+  (stop-peer-1)
   (reset! peer-1
           (ig/init {:via/endpoint {:events #{:foo.bar/baz}
                                    :subs #{:foo.bar/sub}
                                    :event-listeners {:default (partial default-event-listener :peer-1)}}
-                    :via/events {:endpoint (ig/ref :via/endpoint)}
                     :via/subs {:endpoint (ig/ref :via/endpoint)}
                     :via/http-server {:ring-handler (ig/ref :via.example/ring-handler)
                                       :http-port 5000}
                     :via.example/ring-handler {:via-handler (ig/ref :via/endpoint)}})))
 
 (defonce peer-2 (atom nil))
+(defn stop-peer-2
+  []
+  (when-let [system @peer-2]
+    (ig/halt! system)))
 (defn start-peer-2
   []
-  (when-let [system @peer-2] (ig/halt! system))
+  (stop-peer-2)
   (reset! peer-2
           (ig/init {:via/endpoint {:peers #{"ws://localhost:5000/via"}
                                    :heartbeat-interval 5000
                                    :event-listeners {:default (partial default-event-listener :peer-2)}}
-                    :via/events {:endpoint (ig/ref :via/endpoint)}
                     :via/subs {:endpoint (ig/ref :via/endpoint)}
                     :via/http-server {:ring-handler (ig/ref :via.example/ring-handler)
                                       :http-port 5001}
@@ -100,9 +107,8 @@
    {:sub/response {:query query
                    :counter @counter}}))
 
-(comment
-
-  (sig/alter! counter inc)
+(defn test-basic
+  []
 
   (do (start-peer-1)
       (start-peer-2)
@@ -118,5 +124,37 @@
                        (println :via/got-subscribe-value value)))))
       )
 
+  )
+
+(defn test-partition
+  []
+
+  (do (start-peer-1)
+      (start-peer-2)
+      (let [endpoint (:via/endpoint @peer-2)
+            peer-id (ve/first-peer endpoint)]
+        (println :ready)
+        (Thread/sleep 1000)
+        (println :partitioning)
+        (stop-peer-1)
+        (Thread/sleep 1000)
+        (start-peer-1)
+
+        )
+      )
+
+  )
+
+(comment
+
+  (sig/alter! counter inc)
+
+  (test-basic)
+
+  (test-partition)
+
+
+  (stop-peer-1)
+  (start-peer-1)
 
   )
