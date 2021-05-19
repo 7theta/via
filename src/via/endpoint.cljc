@@ -11,11 +11,14 @@
   (:refer-clojure :exclude [send])
   (:require #?(:clj [via.adapters.aleph :as aleph])
             #?(:cljs [via.adapters.haslett :as haslett])
+            #?(:cljs [utilis.js :as j])
+            [via.util.promise :as p]
             [via.adapter :as adapter]
             [via.util.id :refer [uuid]]
             [via.defaults :as defaults]
             [signum.fx :as sfx]
             [signum.events :as se]
+            [signum.subs :as ss]
             [tempus.core :as t]
             [tempus.duration :as td]
             [tempus.transit :as tt]
@@ -26,7 +29,7 @@
             [integrant.core :as ig]
             [clojure.set :refer [union difference]]
             [clojure.string :as st])
-  (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
+  #?(:clj (:import [java.io ByteArrayInputStream ByteArrayOutputStream])))
 
 (defonce endpoints (atom #{}))
 
@@ -34,12 +37,11 @@
          connect disconnect
          handle-connect handle-disconnect
          handle-message handle-event
-         id-seq->map)
+         ns-keyword)
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [peers
-             events
-             subs
+             exports
              transit-handlers
              event-listeners
              adapter
@@ -50,32 +52,38 @@
                       :cljs haslett/websocket-adapter)
            heartbeat-interval defaults/heartbeat-interval
            heartbeat-enabled true}}]
-  (let [events (set (concat events
-                            [:via.session-context/replace
-                             :via.session-context/merge
-                             :via.endpoint/heartbeat]))
-        subs (set subs)
-        endpoint (adapter (merge
-                           {:event-listeners (atom (map-vals (fn [handler]
-                                                               {(uuid) handler})
-                                                             event-listeners))
-                            :subs (atom (id-seq->map subs))
-                            :events (atom (id-seq->map events))
-                            :peers (atom {})
-                            :requests (atom {})
-                            :context (atom {})
-                            :handle-message (fn [& args] (apply handle-message args))
-                            :handle-disconnect (fn [& args] (apply handle-disconnect args))
-                            :handle-connect (fn [& args] (apply handle-connect args))
-                            :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
-                            :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
-                            :heartbeat-interval heartbeat-interval
-                            :heartbeat-enabled heartbeat-enabled}
-                           adapter-options))]
-    (swap! endpoints conj endpoint)
-    (doseq [peer-address peers]
-      (connect endpoint peer-address))
-    endpoint))
+  (try (let [{:keys [events subs namespaces]} exports
+             endpoint (adapter (merge
+                                {:event-listeners (atom (map-vals (fn [handler]
+                                                                    {(uuid) handler})
+                                                                  event-listeners))
+                                 :exports (atom {:subs (set subs)
+                                                 :events (set (concat events
+                                                                      [:via.session-context/replace
+                                                                       :via.session-context/merge
+                                                                       :via.endpoint/heartbeat]))
+                                                 :namespaces (set namespaces)})
+                                 :peers (atom {})
+                                 :requests (atom {})
+                                 :context (atom {})
+                                 :handle-message (fn [& args] (apply handle-message args))
+                                 :handle-disconnect (fn [& args] (apply handle-disconnect args))
+                                 :handle-connect (fn [& args] (apply handle-connect args))
+                                 :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
+                                 :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
+                                 :heartbeat-interval heartbeat-interval
+                                 :heartbeat-enabled heartbeat-enabled}
+                                adapter-options))]
+         (swap! endpoints conj endpoint)
+         (doseq [peer-address peers]
+           (connect endpoint peer-address))
+         endpoint)
+       #?(:clj (catch Exception e
+                 (println "Exception starting :via/endpoint" e)
+                 (throw e))
+          :cljs (catch js/Error e
+                  (js/console.error "Exception starting :via/endpoint" e)
+                  (throw e)))))
 
 (defmethod ig/halt-key! :via/endpoint
   [_ endpoint]
@@ -93,6 +101,12 @@
                                       on-timeout timeout]
                                :or {type :event
                                     timeout 30000}}]
+  (when (not peer-id)
+    (throw (ex-info "No peer-id provided" {:message message
+                                           :peer-id peer-id
+                                           :type type
+                                           :params params
+                                           :timeout timeout})))
   (let [message (merge (when type {:type type})
                        (when message {:payload message})
                        params)]
@@ -166,7 +180,7 @@
                                  (swap! update-in [peer-id :session-context] f)
                                  (get peer-id)
                                  :session-context)]
-         (handle-event endpoint :via.endpoint.session-context/updated session-context)
+         (handle-event endpoint :via.endpoint.session-context/change session-context)
          (when sync
            (let [event-handler-args {:peer-id peer-id :session-context session-context}]
              (send endpoint peer-id [:via.session-context/replace {:session-context session-context :sync false}]
@@ -179,25 +193,27 @@
   [endpoint context]
   (swap! (adapter/context (endpoint)) merge context))
 
-(defn reg-sub
-  ([endpoint sub-id]
-   (reg-sub endpoint sub-id {}))
-  ([endpoint sub-id opts]
-   (swap! (adapter/subs (endpoint)) assoc sub-id opts)))
+(defn export-sub
+  [endpoint sub-id]
+  (swap! (adapter/exports (endpoint)) update :subs conj sub-id))
 
 (defn sub?
   [endpoint sub-id]
-  (contains? @(adapter/subs (endpoint)) sub-id))
+  (boolean
+   (or (get-in @(adapter/exports (endpoint)) [:subs sub-id])
+       (some #(= % (ns-keyword (ss/namespace sub-id)))
+             (:namespaces @(adapter/exports (endpoint)))))))
 
-(defn reg-event
-  ([endpoint event-id]
-   (reg-event endpoint event-id {}))
-  ([endpoint event-id opts]
-   (swap! (adapter/events (endpoint)) assoc event-id opts)))
+(defn export-event
+  [endpoint event-id]
+  (swap! (adapter/exports (endpoint)) update :events conj event-id))
 
 (defn event?
   [endpoint event-id]
-  (contains? @(adapter/events (endpoint)) event-id))
+  (boolean
+   (or (get-in @(adapter/exports (endpoint)) [:events event-id])
+       (some #(= % (ns-keyword (se/namespace event-id)))
+             (:namespaces @(adapter/exports (endpoint)))))))
 
 (defn heartbeat
   [endpoint peer-id]
@@ -213,16 +229,24 @@
               heartbeat-interval)))))
 
 (defn connect
-  ([endpoint peer-address] (connect endpoint peer-address (uuid)))
+  ([endpoint peer-address]
+   (connect endpoint peer-address (uuid)))
   ([endpoint peer-address peer-id]
-   (when-let [connection (adapter/connect (endpoint) peer-address)]
-     ((adapter/handle-connect (endpoint)) endpoint {:id peer-id
-                                                    :connection connection
-                                                    :role :originator
-                                                    :request {:peer-id peer-id
-                                                              :peer-address peer-address}})
-     (heartbeat endpoint peer-id)
-     peer-id)))
+   (let [peer {:id peer-id
+               :role :originator
+               :request {:peer-id peer-id
+                         :peer-address peer-address}}]
+     (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
+     #?(:clj (when-let [connection (adapter/connect (endpoint) peer-address)]
+               ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
+               (heartbeat endpoint peer-id)
+               peer-id)
+        :cljs (-> (endpoint)
+                  (adapter/connect peer-address)
+                  (j/call :then (fn [connection]
+                                  ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
+                                  (heartbeat endpoint peer-id)
+                                  peer-id)))))))
 
 (defn send-reply
   [endpoint peer-id request-id {:keys [status body]}]
@@ -302,14 +326,16 @@
 
 (defn- encode-message
   [handlers ^String data]
-  (let [out (ByteArrayOutputStream. 4096)]
-    (transit/write (transit/writer out :json handlers) data)
-    (.toString out)))
+  #?(:clj (let [out (ByteArrayOutputStream. 4096)]
+            (transit/write (transit/writer out :json handlers) data)
+            (.toString out))
+     :cljs (transit/write (transit/writer :json handlers) data)))
 
 (defn- decode-message
   [handlers ^String data]
-  (let [in (ByteArrayInputStream. (.getBytes data))]
-    (transit/read (transit/reader in :json handlers))))
+  #?(:clj (let [in (ByteArrayInputStream. (.getBytes data))]
+            (transit/read (transit/reader in :json handlers)))
+     :cljs (transit/read (transit/reader :json handlers) data)))
 
 (defn- handle-reply
   [endpoint reply]
@@ -335,12 +361,9 @@
   [endpoint request {:keys [payload] :as message}]
   (let [[event-id & _ :as event] payload]
     (cond
-      (not (event? endpoint event-id))
-      (do (handle-event endpoint :via.endpoint/unknown-remote-event {:message message})
-          (send-unknown-event-reply endpoint (:peer-id request) message))
-
-      (not (se/event? event-id))
-      (do (handle-event endpoint :via.endpoint/unknown-signum-event {:message message})
+      (or (not (event? endpoint event-id))
+          (not (se/event? event-id)))
+      (do (handle-event endpoint :via.endpoint/unknown-event {:message message})
           (send-unknown-event-reply endpoint (:peer-id request) message))
 
       :else (se/dispatch {:endpoint endpoint
@@ -368,7 +391,6 @@
     (timer/cancel reconnect-task))
   (swap! (adapter/peers (endpoint)) update peer-id dissoc :reconnect-task))
 
-
 (defn- remove-peer
   [endpoint peer-id]
   (let [peer (get @(adapter/peers (endpoint)) peer-id)]
@@ -382,16 +404,22 @@
   ([endpoint peer-address peer-id]
    (reconnect endpoint peer-address peer-id 50))
   ([endpoint peer-address peer-id interval]
-   (cancel-reconnect-task endpoint peer-id)
-   (if (not (connect endpoint peer-address peer-id))
-     (swap! (adapter/peers (endpoint))
-            assoc-in [peer-id :reconnect-task]
-            (timer/run-after
-             #(reconnect endpoint peer-address peer-id
-                         (min (* 2 interval)
-                              defaults/max-reconnect-interval))
-             (min interval defaults/max-reconnect-interval)))
-     (cancel-reconnect-task endpoint peer-id))))
+   (let [on-connect-failed (fn []
+                             (swap! (adapter/peers (endpoint))
+                                    assoc-in [peer-id :reconnect-task]
+                                    (timer/run-after
+                                     #(reconnect endpoint peer-address peer-id
+                                                 (min (* 2 interval)
+                                                      defaults/max-reconnect-interval))
+                                     (min interval defaults/max-reconnect-interval))))]
+     (cancel-reconnect-task endpoint peer-id)
+     #?(:clj (if (not (connect endpoint peer-address peer-id))
+               (on-connect-failed)
+               (cancel-reconnect-task endpoint peer-id))
+        :cljs (-> endpoint
+                  (connect peer-address peer-id)
+                  (j/call :then (fn [_] (cancel-reconnect-task endpoint peer-id)))
+                  (j/call :catch (fn [_] (on-connect-failed))))))))
 
 (defn- handle-disconnect
   [endpoint {:keys [role request] :as peer}]
@@ -401,9 +429,7 @@
     (reconnect endpoint (:peer-address request) (:id peer))
     (remove-peer endpoint (:id peer))))
 
-(defn- id-seq->map
-  [ids]
-  (->> ids
-       (map (fn [id]
-              [id {}]))
-       (into {})))
+(defn- ns-keyword
+  [ns]
+  #?(:clj (keyword (.getName ns))
+     :cljs (keyword (j/call ns :getName))))

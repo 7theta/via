@@ -22,7 +22,6 @@
 
                  [aleph "0.4.7-alpha7"]
 
-                 [luminus/ring-undertow-adapter "1.2.1"]
                  [ring/ring-core "1.9.3" :exclusions [ring/ring-codec]]
                  [ring/ring-defaults "0.3.2"]
                  [ring/ring-anti-forgery "1.3.0"]

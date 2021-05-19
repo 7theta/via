@@ -27,13 +27,9 @@
   [endpoint]
   (opt endpoint :peers))
 
-(defn subs
+(defn exports
   [endpoint]
-  (opt endpoint :subs))
-
-(defn events
-  [endpoint]
-  (opt endpoint :events))
+  (opt endpoint :exports))
 
 (defn context
   [endpoint]

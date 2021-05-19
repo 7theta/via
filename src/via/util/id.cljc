@@ -7,7 +7,8 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.util.id)
+(ns via.util.id
+  #?(:cljs (:refer-clojure :exclude [uuid])))
 
 (defn uuid
   []

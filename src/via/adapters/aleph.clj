@@ -50,7 +50,7 @@
   (s/put! (get-in @(adapter/peers endpoint) [peer-id :connection]) message))
 
 (defn- connect*
-  [endpoint address]
+  [endpoint address {:keys [on-success on-failure]}]
   (try @(http/websocket-client address)
        (catch Exception e
          nil)))

@@ -37,9 +37,9 @@
         outbound-subs (atom {})]
     (via/merge-context endpoint {::inbound-subs inbound-subs
                                  ::outbound-subs outbound-subs})
-    (via/reg-event endpoint :via.subs/subscribe)
-    (via/reg-event endpoint :via.subs/dispose)
-    (via/reg-event endpoint :via.subs.signal/updated)
+    (via/export-event endpoint :via.subs/subscribe)
+    (via/export-event endpoint :via.subs/dispose)
+    (via/export-event endpoint :via.subs.signal/updated)
     {:endpoint endpoint
      :inbound-subs inbound-subs
      :outbound-subs outbound-subs
@@ -67,6 +67,7 @@
 (defn subscribe
   ([endpoint peer-id query] (subscribe endpoint peer-id query nil))
   ([endpoint peer-id [query-id & _ :as query] default]
+   (println :subscribe peer-id query)
    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
      (locking subscription-lock
        (when (not (ss/sub? query-id))
@@ -83,7 +84,6 @@
                                                               :query-v query-v
                                                               :default default}))))
                   remote-subscribe (fn []
-                                     (println :remote-subscribe peer-id query)
                                      (via/send endpoint peer-id
                                                [:via.subs/subscribe
                                                 {:query-v query-v
@@ -154,9 +154,11 @@
 (defn- subscribe-inbound
   [endpoint request [query-id & _ :as query-v] callback]
   (locking subscription-lock
-    (if-let [signal (binding [ss/*context* {:endpoint endpoint
-                                            :request request}]
-                      (ss/subscribe query-v))]
+    (if-let [signal (when (and (via/sub? endpoint query-id)
+                               (ss/sub? query-id))
+                      (binding [ss/*context* {:endpoint endpoint
+                                              :request request}]
+                        (ss/subscribe query-v)))]
       (let [peer-id (:peer-id request)
             sequence-number (atom (long 0))
             watch-key (str ":via-" query-v "(" peer-id ")")

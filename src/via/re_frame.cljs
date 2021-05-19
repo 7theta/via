@@ -11,14 +11,36 @@
   (:require [via.endpoint :as via]
             [via.defaults :as defaults]
             [via.subs :as vs]
-            [via.util.re-frame :as via-rf]
+            [reagent.ratom :as ra]
             [re-frame.core :as rf]))
 
 (defn subscribe
-  [endpoint peer-id query default]
-  (-> endpoint
-      (vs/subscribe peer-id query default)
-      (via-rf/adapter query sub)))
+  [endpoint peer-id [query-id & _ :as query-v] default]
+  (let []
+    (when-not (re-frame.registrar/get-handler :sub query-id)
+      (let [sub (vs/subscribe endpoint peer-id query-v default)]
+
+        (add-watch sub ::subscribe
+                   (fn [_ _ _ value]
+
+                     (println
+                      {:query-v query-v
+                       :value value
+                       :default default})
+
+                     ))
+
+        (rf/reg-sub
+         query-id
+         (fn [db query-v]
+           default
+           #_(swap! subscriptions conj query-v)
+           #_(get-in db (path query-v))))))
+    (ra/make-reaction #(let [sub-value @(rf/subscribe query-v)]
+                         sub-value
+                         #_(if (get @subscriptions query-v)
+                             (if (:updated sub-value) (:value sub-value) default)
+                             (if (nil? sub-value) default sub-value))))))
 
 ;;; Effect Handlers
 
@@ -57,9 +79,9 @@
            peer-id (or peer-id (via/first-peer endpoint))]
        (if on-success
          (via/send endpoint peer-id event
-                   :on-success (when on-success #(dispatch (conj (vec on-success) (:payload %))))
-                   :on-failure (when on-failure #(dispatch (conj (vec on-failure) (:payload %))))
-                   :on-timeout (when on-timeout #(dispatch (conj (vec on-timeout) (:payload %))))
+                   :on-success (when on-success #(rf/dispatch (conj (vec on-success) (:payload %))))
+                   :on-failure (when on-failure #(rf/dispatch (conj (vec on-failure) (:payload %))))
+                   :on-timeout (when on-timeout #(rf/dispatch (conj (vec on-timeout) (:payload %))))
                    :timeout (or timeout defaults/request-timeout))
          (via/send endpoint peer-id event))))))
 

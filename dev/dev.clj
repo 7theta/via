@@ -68,8 +68,9 @@
   []
   (stop-peer-1)
   (reset! peer-1
-          (ig/init {:via/endpoint {:events #{:foo.bar/baz}
-                                   :subs #{:foo.bar/sub}
+          (ig/init {:via/endpoint {:exports {:events #{:foo.bar/baz}
+                                             :subs #{:foo.bar/sub}
+                                             :namespaces #{:my-app/subs}}
                                    :event-listeners {:default (partial default-event-listener :peer-1)}}
                     :via/subs {:endpoint (ig/ref :via/endpoint)}
                     :via/http-server {:ring-handler (ig/ref :via.example/ring-handler)
