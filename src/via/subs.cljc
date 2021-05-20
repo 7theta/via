@@ -23,6 +23,7 @@
 
 (declare dispose-peer
          dispose-inbound
+         dispose-outbound
          reconnect-subs
          subscribe-inbound
          sub-key)
@@ -67,7 +68,6 @@
 (defn subscribe
   ([endpoint peer-id query] (subscribe endpoint peer-id query nil))
   ([endpoint peer-id [query-id & _ :as query] default]
-   (println :subscribe peer-id query)
    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
      (locking subscription-lock
        (when (not (ss/sub? query-id))
@@ -92,6 +92,7 @@
                                                :on-failure (reply-handler :via.subs.subscribe/failure)
                                                :on-timeout (reply-handler :via.subs.subscribe/timeout)
                                                :timeout defaults/request-timeout))]
+              (remote-subscribe)
               (locking subscription-lock
                 (swap! outbound-subs assoc (sub-key peer-id query-v)
                        {:state (atom {:window []
@@ -103,6 +104,10 @@
           (fn [signal _] @signal))
          true))
      (ss/subscribe query))))
+
+(defn dispose
+  [endpoint peer-id query]
+  (dispose-outbound endpoint peer-id query))
 
 ;;; Private
 
@@ -260,6 +265,5 @@
 
 (defn- reconnect-subs
   [endpoint peer-id]
-  (println :reconnect-subs peer-id)
   (doseq [{:keys [remote-subscribe]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
     (remote-subscribe)))

@@ -11,36 +11,29 @@
   (:require [via.endpoint :as via]
             [via.defaults :as defaults]
             [via.subs :as vs]
+            [via.adapter :as va]
             [reagent.ratom :as ra]
-            [re-frame.core :as rf]))
+            [re-frame.core :as rf]
+            [re-frame.registrar :as rfr]
+            [clojure.data :refer [diff]]))
+
+(declare path subscriptions)
 
 (defn subscribe
   [endpoint peer-id [query-id & _ :as query-v] default]
-  (let []
+  (let [subscriptions (subscriptions endpoint peer-id)
+        remote? (fn [query-v] (get @subscriptions query-v))]
     (when-not (re-frame.registrar/get-handler :sub query-id)
-      (let [sub (vs/subscribe endpoint peer-id query-v default)]
-
-        (add-watch sub ::subscribe
-                   (fn [_ _ _ value]
-
-                     (println
-                      {:query-v query-v
-                       :value value
-                       :default default})
-
-                     ))
-
-        (rf/reg-sub
-         query-id
-         (fn [db query-v]
-           default
-           #_(swap! subscriptions conj query-v)
-           #_(get-in db (path query-v))))))
+      (rf/reg-sub
+       query-id
+       (fn [db query-v]
+         (swap! subscriptions conj query-v)
+         (get-in db (path query-v)))))
     (ra/make-reaction #(let [sub-value @(rf/subscribe query-v)]
-                         sub-value
-                         #_(if (get @subscriptions query-v)
-                             (if (:updated sub-value) (:value sub-value) default)
-                             (if (nil? sub-value) default sub-value))))))
+                         (cond
+                           (remote? query-v) sub-value
+                           (nil? sub-value) default
+                           :else sub-value)))))
 
 ;;; Effect Handlers
 
@@ -103,3 +96,48 @@
  (fn [_ session-context]
    {:via/dispatch {:event [:via.session-context/merge {:session-context session-context
                                                        :sync false}]}}))
+
+;;; Implementation
+
+(defn- path
+  [query-v]
+  [:via.subs/cache query-v])
+
+(rf/reg-event-fx
+ :via.re-frame.sub.value/updated
+ (fn [{:keys [db]} [_ query-v value]]
+   {:db (assoc-in db (path query-v) value)}))
+
+(defn remote-subscribe
+  [endpoint peer-id remote-subscriptions query-v]
+  (let [sub (vs/subscribe endpoint peer-id query-v)]
+    (add-watch sub ::remote-subscribe
+               (fn [_ _ _ value]
+                 (rf/dispatch [:via.re-frame.sub.value/updated query-v value])))
+    (swap! remote-subscriptions assoc query-v sub)
+    sub))
+
+(defn remote-dispose
+  [endpoint peer-id remote-subscriptions query-v]
+  (when-let [sub (get @remote-subscriptions query-v)]
+    (remove-watch sub ::remote-subscribe)
+    (swap! remote-subscriptions dissoc query-v)
+    (vs/dispose endpoint peer-id query-v)))
+
+(defn subscriptions
+  [endpoint peer-id]
+  (let [context (va/context (endpoint))]
+    (or (::subscriptions @context)
+        (let [subscriptions (atom #{})
+              remote-subscriptions (atom {})]
+          (swap! context assoc ::subscriptions subscriptions)
+          (add-watch subscriptions ::subscriptions
+                     (fn [_key _ref old-value new-value]
+                       (let [[removed added _] (diff old-value new-value)]
+                         (doseq [query-v removed]
+                           (when-not (->> @subscriptions (filter #(= (first %) (first query-v))) not-empty)
+                             (rfr/clear-handlers :sub (first query-v)))
+                           (remote-dispose endpoint peer-id remote-subscriptions query-v))
+                         (doseq [query-v added]
+                           (remote-subscribe endpoint peer-id remote-subscriptions query-v)))))
+          subscriptions))))

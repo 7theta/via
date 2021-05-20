@@ -6,7 +6,6 @@
 ;;   By using this software in any fashion, you are agreeing to be bound by
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
-
 (ns via.endpoint
   (:refer-clojure :exclude [send])
   (:require #?(:clj [via.adapters.aleph :as aleph])
@@ -37,7 +36,7 @@
          connect disconnect
          handle-connect handle-disconnect
          handle-message handle-event
-         ns-keyword)
+         normalize-namespace)
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [peers
@@ -201,7 +200,8 @@
   [endpoint sub-id]
   (boolean
    (or (get-in @(adapter/exports (endpoint)) [:subs sub-id])
-       (some #(= % (ns-keyword (ss/namespace sub-id)))
+       (some #(= (normalize-namespace %)
+                 (normalize-namespace (ss/namespace sub-id)))
              (:namespaces @(adapter/exports (endpoint)))))))
 
 (defn export-event
@@ -212,7 +212,8 @@
   [endpoint event-id]
   (boolean
    (or (get-in @(adapter/exports (endpoint)) [:events event-id])
-       (some #(= % (ns-keyword (se/namespace event-id)))
+       (some #(= (normalize-namespace %)
+                 (normalize-namespace (se/namespace event-id)))
              (:namespaces @(adapter/exports (endpoint)))))))
 
 (defn heartbeat
@@ -429,7 +430,20 @@
     (reconnect endpoint (:peer-address request) (:id peer))
     (remove-peer endpoint (:id peer))))
 
-(defn- ns-keyword
+(def namespace-type (type *ns*))
+
+(defn namespace?
   [ns]
-  #?(:clj (keyword (.getName ns))
-     :cljs (keyword (j/call ns :getName))))
+  (instance? namespace-type ns))
+
+(defn- normalize-namespace
+  [ns]
+  (cond
+    (string? ns) (keyword
+                  (-> (str ns)
+                      (st/replace #"^:" "")
+                      (st/replace #"/" ".")))
+    (keyword? ns) (normalize-namespace (str ns))
+    (namespace? ns) #?(:clj (keyword (.getName ns))
+                       :cljs (keyword (j/call ns :getName)))
+    :else (throw (ex-info "Can't normalize namespace" {:ns ns}))))

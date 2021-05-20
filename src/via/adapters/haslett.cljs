@@ -40,9 +40,6 @@
 
 (defn- send*
   [endpoint peer-id message]
-
-  (println peer-id :connection (boolean (get-in @(adapter/peers endpoint) [peer-id ])) message)
-
   (async/put! (get-in @(adapter/peers endpoint) [peer-id :connection :sink]) message))
 
 (defn- connect*
