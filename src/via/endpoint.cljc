@@ -27,7 +27,8 @@
             [utilis.timer :as timer]
             [integrant.core :as ig]
             [clojure.set :refer [union difference]]
-            [clojure.string :as st])
+            [clojure.string :as st]
+            #?(:clj [clojure.tools.logging :as log]))
   #?(:clj (:import [java.io ByteArrayInputStream ByteArrayOutputStream])))
 
 (defonce endpoints (atom #{}))
@@ -78,7 +79,7 @@
            (connect endpoint peer-address))
          endpoint)
        #?(:clj (catch Exception e
-                 (println "Exception starting :via/endpoint" e)
+                 (log/error "Exception starting :via/endpoint" e)
                  (throw e))
           :cljs (catch js/Error e
                   (js/console.error "Exception starting :via/endpoint" e)
@@ -123,7 +124,7 @@
                         #(do (swap! (adapter/requests (endpoint)) dissoc request-id)
                              (try ((fsafe on-timeout))
                                   #?(:clj (catch Exception e
-                                            (println "Unhandled exception in timeout handler" e))
+                                            (log/error "Unhandled exception in timeout handler" e))
                                      :cljs (catch js/Error e
                                              (js/console.error "Unhandled exception in timeout handler" e)))))
                         timeout)
@@ -345,7 +346,7 @@
         (let [f (get {200 (:on-success request)} (:status reply) (:on-failure request))]
           (try ((fsafe f) (select-keys reply [:status :payload]))
                #?(:clj (catch Exception e
-                         (println "Unhandled exception in reply handler" e))
+                         (log/error "Unhandled exception in reply handler" e))
                   :cljs (catch js/Error e
                           (js/console.error "Unhandled exception in reply handler" e))))
           (swap! (adapter/requests (endpoint)) dissoc (:request-id reply))))

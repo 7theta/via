@@ -19,7 +19,8 @@
             [signum.signal :as sig]
             [tempus.core :as t]
             [distantia.core :refer [diff]]
-            [integrant.core :as ig]))
+            [integrant.core :as ig]
+            #?(:clj [clojure.tools.logging :as log])))
 
 (declare dispose-peer
          dispose-inbound
@@ -172,8 +173,7 @@
                                                :sn (swap! sequence-number inc)}))
                               true
                               (catch #?(:clj Exception :cljs js/Error) e
-                                #?(:clj (locking defaults/log-lock
-                                          (println :via/send-value "->" peer-id "\n" e))
+                                #?(:clj (log/error :via/send-value "->" peer-id e)
                                    :cljs (js/console.error ":via/send-value" "->" peer-id "\n" e))
                                 (dispose-inbound endpoint peer-id)
                                 false))]

@@ -19,7 +19,8 @@
             [aleph.http :as http]
             [manifold.deferred :as d]
             [manifold.stream :as s]
-            [clojure.string :as st])
+            [clojure.string :as st]
+            [clojure.tools.logging :as log])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
 (declare send* disconnect* connect* handle-request handle-connection)
@@ -91,7 +92,7 @@
                          (assoc request :peer-id peer-id)
                          msg)
                         (catch Exception e
-                          (println "Exception occurred handling message" e)))))
+                          (log/error "Exception occurred handling message" e)))))
                (fn [result]
                  (when-not (identical? ::drained result)
                    (d/recur)))))))
