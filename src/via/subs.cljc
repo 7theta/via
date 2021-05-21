@@ -28,8 +28,6 @@
          subscribe-inbound
          sub-key)
 
-#?(:clj (def exception-lock (Object.)))
-
 (def subscription-lock #?(:cljs (js/Object.) :clj (Object.)))
 
 (defmethod ig/init-key :via/subs
@@ -174,7 +172,7 @@
                                                :sn (swap! sequence-number inc)}))
                               true
                               (catch #?(:clj Exception :cljs js/Error) e
-                                #?(:clj (locking exception-lock
+                                #?(:clj (locking defaults/log-lock
                                           (println :via/send-value "->" peer-id "\n" e))
                                    :cljs (js/console.error ":via/send-value" "->" peer-id "\n" e))
                                 (dispose-inbound endpoint peer-id)
@@ -189,7 +187,7 @@
                                                        [:p (diff old new)]
                                                        [:v new])))))
         (send-value! [:v @signal]))
-      (do (via/handle-event endpoint :via.subs.inbound-subscribe/no-signal
+      (do (via/handle-event endpoint :via.subs/unknown-sub
                             {:query-v query-v
                              :callback callback})
           false))))

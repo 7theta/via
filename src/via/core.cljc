@@ -10,8 +10,9 @@
   ([query]
    (let [endpoint (first @via/endpoints)]
      (subscribe endpoint (via/first-peer endpoint) query nil)))
-  ([endpoint query]
-   (subscribe endpoint (via/first-peer endpoint) query nil))
+  ([query default]
+   (let [endpoint (first @via/endpoints)]
+     (subscribe endpoint (via/first-peer endpoint) query default)))
   ([endpoint peer-id query]
    (subscribe endpoint peer-id query nil))
   ([endpoint peer-id query default]

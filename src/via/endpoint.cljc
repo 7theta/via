@@ -439,6 +439,7 @@
 (defn- normalize-namespace
   [ns]
   (cond
+    (nil? ns) nil
     (string? ns) (keyword
                   (-> (str ns)
                       (st/replace #"^:" "")

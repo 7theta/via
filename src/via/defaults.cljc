@@ -15,6 +15,7 @@
 (def request-timeout 10000)
 (def heartbeat-interval 30000)
 (def max-reconnect-interval 5000)
+(def log-lock #?(:clj (Object.) :cljs (js/Object.)))
 
 #?(:cljs
    (def default-via-url
