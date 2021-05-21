@@ -60,7 +60,7 @@
   [_ {:keys [endpoint listeners inbound-subs outbound-subs]}]
   (doseq [peer-id (seq (concat (map second (keys @inbound-subs))
                                (map first (keys @outbound-subs))))]
-    (dispose-peer peer-id))
+    (dispose-peer endpoint peer-id))
   (doseq [{:keys [key listener]} listeners]
     (via/remove-event-listener endpoint key listener)))
 
