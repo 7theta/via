@@ -15,9 +15,12 @@
   []
   #?(:clj (let [p (d/deferred)]
             {:promise p
-             :on-success (fn [reply] (d/success! p reply))
-             :on-failure (fn [reply] (d/error! p reply))
-             :on-timeout (fn [] (d/error! p {:error ::timeout}))})
+             :on-success (fn [reply] (d/success! p reply) reply)
+             :on-failure (fn [reply] (d/error! p reply) reply)
+             :on-timeout (fn []
+                           (let [reply {:error :timeout}]
+                             (d/error! p reply)
+                             reply))})
      :cljs (let [ch (chan)
                  p (js/Promise.
                     (fn [resolve reject]
@@ -29,6 +32,9 @@
                                  (reject e)))
                           (close! ch))))]
              {:promise p
-              :on-success (fn [reply] (put! ch {:f :resolve :v reply}))
-              :on-failure (fn [reply] (put! ch {:f :reject :v reply}))
-              :on-timeout (fn [] (put! ch {:f :reject :v {:error ::timeout}}))})))
+              :on-success (fn [reply] (put! ch {:f :resolve :v reply}) reply)
+              :on-failure (fn [reply] (put! ch {:f :reject :v reply}) reply)
+              :on-timeout (fn []
+                            (let [reply {:error :timeout}]
+                              (put! ch {:f :reject :v reply})
+                              reply))})))

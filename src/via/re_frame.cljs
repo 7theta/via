@@ -11,13 +11,14 @@
   (:require [via.endpoint :as via]
             [via.defaults :as defaults]
             [via.subs :as vs]
+            [via.events :as ve]
             [via.adapter :as va]
             [reagent.ratom :as ra]
             [re-frame.core :as rf]
             [re-frame.registrar :as rfr]
             [clojure.data :refer [diff]]))
 
-(declare path subscriptions)
+(declare path subscriptions re-frame-handlers)
 
 (defn subscribe
   [endpoint peer-id [query-id & _ :as query-v] default]
@@ -34,6 +35,12 @@
                            (remote? query-v) sub-value
                            (nil? sub-value) default
                            :else sub-value)))))
+
+(defn dispatch
+  [endpoint peer-id event options]
+  (if (re-frame.registrar/get-handler :event (first event))
+    (rf/dispatch event)
+    (ve/dispatch endpoint peer-id event (re-frame-handlers options))))
 
 ;;; Effect Handlers
 
@@ -141,3 +148,19 @@
                          (doseq [query-v added]
                            (remote-subscribe endpoint peer-id remote-subscriptions query-v)))))
           subscriptions))))
+
+(defn re-frame-handlers
+  [options]
+  (reduce (fn [options key]
+            (if-let [handler (get options key)]
+              (assoc options key
+                     (if (vector? handler)
+                       (fn [& args]
+                         (rf/dispatch
+                          (vec (concat handler args))))
+                       handler))
+              options))
+          options
+          [:on-success
+           :on-failure
+           :on-timeout]))
