@@ -45,15 +45,15 @@
      :outbound-subs outbound-subs
      :listeners [{:key :via.endpoint.peer/remove
                   :listener (via/add-event-listener endpoint :via.endpoint.peer/remove
-                                                    (fn [{:keys [id]}]
+                                                    (fn [[_ {:keys [id]}]]
                                                       (dispose-peer endpoint id)))}
                  {:key :via.endpoint.peer/open
                   :listener (via/add-event-listener endpoint :via.endpoint.peer/connect
-                                                    (fn [{:keys [id]}]
+                                                    (fn [[_ {:keys [id]}]]
                                                       (reconnect-subs endpoint id)))}
                  {:key :via.endpoint.peer/disconnect
                   :listener (via/add-event-listener endpoint :via.endpoint.peer/disconnect
-                                                    (fn [{:keys [id]}]
+                                                    (fn [[_ {:keys [id]}]]
                                                       (dispose-inbound endpoint id)))}]}))
 
 (defmethod ig/halt-key! :via/subs
@@ -258,6 +258,7 @@
 
 (defn- dispose-peer
   [endpoint peer-id]
+  #?(:clj (log/info :dispose-peer peer-id))
   (dispose-outbound endpoint peer-id)
   (dispose-inbound endpoint peer-id))
 

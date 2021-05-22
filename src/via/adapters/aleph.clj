@@ -20,7 +20,8 @@
             [manifold.deferred :as d]
             [manifold.stream :as s]
             [clojure.string :as st]
-            [clojure.tools.logging :as log])
+            [clojure.tools.logging :as log]
+            [manifold.stream :as ms])
   (:import [java.io ByteArrayInputStream ByteArrayOutputStream]))
 
 (declare send* disconnect* connect* handle-request handle-connection)
@@ -48,7 +49,9 @@
 
 (defn- send*
   [endpoint peer-id message]
-  (s/put! (get-in @(adapter/peers endpoint) [peer-id :connection]) message))
+  (if-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
+    (s/put! connection message)
+    (log/info "No connection for peer" peer-id)))
 
 (defn- connect*
   [endpoint address {:keys [on-success on-failure]}]
@@ -77,15 +80,14 @@
 (defn- handle-connection
   [endpoint [_ {:keys [connection request]}]]
   (let [{:keys [peer-id]} request]
-    (when (not peer-id)
-      (throw (ex-info "No peer-id on request"
-                      {:request request})))
+    (when (not peer-id) (throw (ex-info "No peer-id on request" {:request request})))
     (swap! (adapter/peers endpoint) update peer-id dissoc :reconnect)
     (d/loop []
       (d/chain (s/take! connection ::drained)
                (fn [msg]
                  (if (identical? ::drained msg)
-                   (do ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))
+                   (do (log/info ::drained msg)
+                       ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))
                        ::drained)
                    (try ((adapter/handle-message endpoint)
                          (constantly endpoint)
