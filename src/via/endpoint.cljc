@@ -327,17 +327,25 @@
 ;;; Implementation
 
 (defn- encode-message
-  [handlers ^String data]
-  #?(:clj (let [out (ByteArrayOutputStream. 4096)]
-            (transit/write (transit/writer out :json handlers) data)
-            (.toString out))
-     :cljs (transit/write (transit/writer :json handlers) data)))
+  [handlers data]
+  #?(:clj (try (let [out (ByteArrayOutputStream. 4096)]
+                 (transit/write (transit/writer out :json handlers) data)
+                 (.toString out))
+               (catch Exception e
+                 (log/error "Exception occurred encoding message" data e)))
+     :cljs (try (transit/write (transit/writer :json handlers) data)
+                (catch js/Error e
+                  (js/console.error "Exception occurred encoding message" (clj->js data) e)))))
 
 (defn- decode-message
   [handlers ^String data]
-  #?(:clj (let [in (ByteArrayInputStream. (.getBytes data))]
-            (transit/read (transit/reader in :json handlers)))
-     :cljs (transit/read (transit/reader :json handlers) data)))
+  #?(:clj (try (let [in (ByteArrayInputStream. (.getBytes data))]
+                 (transit/read (transit/reader in :json handlers)))
+               (catch Exception e
+                 (log/error "Exception occurred decoding message" data e)))
+     :cljs (try (transit/read (transit/reader :json handlers) data)
+                (catch js/Error e
+                  (js/console.error "Exception occurred encoding message" data e)))))
 
 (defn- handle-reply
   [endpoint reply]

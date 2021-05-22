@@ -178,8 +178,9 @@
                                 (dispose-inbound endpoint peer-id)
                                 false))]
         (swap! (::inbound-subs @(adapter/context (endpoint)))
-               assoc [query-v peer-id] {:signal signal
-                                        :watch-key watch-key})
+               assoc (sub-key peer-id query-v)
+               {:signal signal
+                :watch-key watch-key})
         (add-watch signal watch-key (fn [_ _ old new]
                                       (when (not= old new)
                                         (send-value! (if (or (and (map? new) (map? old))
