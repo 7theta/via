@@ -27,7 +27,9 @@
          dispose-outbound
          reconnect-subs
          subscribe-inbound
-         sub-key)
+         sub-key
+         sub-key->peer-id
+         sub-key->query-v)
 
 (def subscription-lock #?(:cljs (js/Object.) :clj (Object.)))
 
@@ -56,10 +58,11 @@
                                                     (fn [[_ {:keys [id]}]]
                                                       (dispose-inbound endpoint id)))}]}))
 
+
 (defmethod ig/halt-key! :via/subs
   [_ {:keys [endpoint listeners inbound-subs outbound-subs]}]
-  (doseq [peer-id (seq (concat (map second (keys @inbound-subs))
-                               (map first (keys @outbound-subs))))]
+  (doseq [peer-id (seq (concat (map sub-key->peer-id (keys @inbound-subs))
+                               (map sub-key->peer-id (keys @outbound-subs))))]
     (dispose-peer endpoint peer-id))
   (doseq [{:keys [key listener]} listeners]
     (via/remove-event-listener endpoint key listener)))
@@ -98,6 +101,7 @@
                                       :sn 0
                                       :updated nil})
                         :signal signal
+                        :query-v query-v
                         :remote-subscribe remote-subscribe}))
               signal))
           (fn [signal _] @signal))
@@ -114,12 +118,21 @@
   [peer-id query-v]
   [peer-id query-v])
 
+(defn- sub-key->peer-id
+  [sub-key]
+  (first sub-key))
+
+(defn- sub-key->query-v
+  [sub-key]
+  (second sub-key))
+
 (defn- dispose-inbound
   ([endpoint peer-id]
    (locking subscription-lock
-     (doseq [[query-v _] (->> @(::inbound-subs @(adapter/context (endpoint)))
-                              keys
-                              (filter #(= peer-id (second %))))]
+     (doseq [query-v (->> @(::inbound-subs @(adapter/context (endpoint)))
+                          keys
+                          (filter #(= peer-id (sub-key->peer-id %)))
+                          (map sub-key->query-v))]
        (dispose-inbound endpoint peer-id query-v))))
   ([endpoint peer-id query-v]
    (locking subscription-lock
@@ -133,9 +146,10 @@
 (defn dispose-outbound
   ([endpoint peer-id]
    (locking subscription-lock
-     (doseq [[query-v _] (->> @(::outbound-subs @(adapter/context (endpoint)))
-                              keys
-                              (filter #(= peer-id (second %))))]
+     (doseq [query-v (->> @(::outbound-subs @(adapter/context (endpoint)))
+                          keys
+                          (filter #(= peer-id (sub-key->peer-id %)))
+                          (map sub-key->query-v))]
        (dispose-outbound endpoint peer-id query-v))))
   ([endpoint peer-id query-v]
    (locking subscription-lock
@@ -265,5 +279,5 @@
 
 (defn- reconnect-subs
   [endpoint peer-id]
-  (doseq [{:keys [remote-subscribe]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
+  (doseq [{:keys [remote-subscribe query-v]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
     (remote-subscribe)))

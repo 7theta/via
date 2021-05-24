@@ -16,6 +16,7 @@
             [reagent.ratom :as ra]
             [re-frame.core :as rf]
             [re-frame.registrar :as rfr]
+            [re-frame.subs :as rfs]
             [clojure.data :refer [diff]]))
 
 (declare path subscriptions re-frame-handlers)
@@ -137,12 +138,22 @@
     (or (::subscriptions @context)
         (let [subscriptions (atom #{})
               remote-subscriptions (atom {})]
+          (add-watch rfs/query->reaction :via.re-frame/subscription-cache
+                     (fn [_key _ref old-value new-value]
+                       (reset! subscriptions
+                               (->> new-value
+                                    keys
+                                    (map first)
+                                    (filter @subscriptions)
+                                    set))))
           (swap! context assoc ::subscriptions subscriptions)
           (add-watch subscriptions ::subscriptions
                      (fn [_key _ref old-value new-value]
                        (let [[removed added _] (diff old-value new-value)]
                          (doseq [query-v removed]
-                           (when-not (->> @subscriptions (filter #(= (first %) (first query-v))) not-empty)
+                           (when-not (->> @subscriptions
+                                          (filter #(= (first %) (first query-v)))
+                                          not-empty)
                              (rfr/clear-handlers :sub (first query-v)))
                            (remote-dispose endpoint peer-id remote-subscriptions query-v))
                          (doseq [query-v added]
