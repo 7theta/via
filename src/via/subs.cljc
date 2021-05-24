@@ -101,6 +101,7 @@
                                       :sn 0
                                       :updated nil})
                         :signal signal
+                        :peer-id peer-id
                         :query-v query-v
                         :remote-subscribe remote-subscribe}))
               signal))
@@ -273,11 +274,11 @@
 
 (defn- dispose-peer
   [endpoint peer-id]
-  #?(:clj (log/info :dispose-peer peer-id))
   (dispose-outbound endpoint peer-id)
   (dispose-inbound endpoint peer-id))
 
 (defn- reconnect-subs
-  [endpoint peer-id]
-  (doseq [{:keys [remote-subscribe query-v]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
-    (remote-subscribe)))
+  [endpoint reconnected-peer-id]
+  (doseq [{:keys [remote-subscribe query-v peer-id]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
+    (when (= peer-id reconnected-peer-id)
+      (remote-subscribe))))
