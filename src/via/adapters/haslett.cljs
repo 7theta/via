@@ -22,8 +22,8 @@
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
                      (send* endpoint peer-id message))
-                   (disconnect [endpoint peer-id]
-                     (disconnect* endpoint peer-id))
+                   (disconnect [endpoint peer-id reconnect]
+                     (disconnect* endpoint peer-id reconnect))
                    (connect [endpoint address]
                      (connect* endpoint address))
                    (shutdown [endpoint]
@@ -40,11 +40,13 @@
 
 (defn- send*
   [endpoint peer-id message]
-  (if-let [sink (get-in @(adapter/peers endpoint) [peer-id :connection :sink])]
-    (async/put! sink message)
-    (js/console.warn "No connection for peer"
-                     #js {:peer-id peer-id
-                          :message message})))
+  (if message
+    (if-let [sink (get-in @(adapter/peers endpoint) [peer-id :connection :sink])]
+      (async/put! sink message)
+      (js/console.warn "No connection for peer"
+                       #js {:peer-id peer-id
+                            :message message}))
+    (js/console.warn "Tried to put nil message on channel" #js {:peer-id peer-id})))
 
 (defn- connect*
   [endpoint address]
@@ -61,8 +63,8 @@
            (js/console.error "Error occurred in via.adapters.haslett/connect*" e)))))))
 
 (defn- disconnect*
-  [endpoint peer-id]
-  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] false)
+  [endpoint peer-id reconnect]
+  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
   (ws/close (get-in @(adapter/peers endpoint) [peer-id :connection])))
 
 (defn- handle-connection

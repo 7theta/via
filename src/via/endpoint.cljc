@@ -47,10 +47,14 @@
              adapter
              adapter-options
              heartbeat-interval
-             heartbeat-enabled]
+             heartbeat-timeout
+             heartbeat-enabled
+             heartbeat-fail-threshold]
       :or {adapter #?(:clj aleph/websocket-adapter
                       :cljs haslett/websocket-adapter)
            heartbeat-interval defaults/heartbeat-interval
+           heartbeat-fail-threshold 1
+           heartbeat-timeout defaults/request-timeout
            heartbeat-enabled true}}]
   (try (let [{:keys [events subs namespaces]} exports
              endpoint (adapter (merge
@@ -72,7 +76,9 @@
                                  :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
                                  :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
                                  :heartbeat-interval heartbeat-interval
-                                 :heartbeat-enabled heartbeat-enabled}
+                                 :heartbeat-enabled heartbeat-enabled
+                                 :heartbeat-fail-threshold heartbeat-fail-threshold
+                                 :heartbeat-timeout heartbeat-timeout}
                                 adapter-options))]
          (swap! endpoints conj endpoint)
          (doseq [peer-address peers]
@@ -141,8 +147,10 @@
     (send endpoint message peer-id)))
 
 (defn disconnect
-  [endpoint peer-id]
-  (adapter/disconnect (endpoint) peer-id))
+  ([endpoint peer-id]
+   (disconnect endpoint peer-id false))
+  ([endpoint peer-id reconnect]
+   (adapter/disconnect (endpoint) peer-id reconnect)))
 
 (defn first-peer
   [endpoint]
@@ -220,15 +228,49 @@
 (defn heartbeat
   [endpoint peer-id]
   (when (adapter/opt (endpoint) :heartbeat-enabled)
-    (when-let [heartbeat-interval (adapter/opt (endpoint) :heartbeat-interval)]
-      (when-let [heartbeat-timer (get-in @(adapter/peers (endpoint)) [peer-id :heartbeat-timer])]
-        (timer/cancel heartbeat-timer))
-      (swap! (adapter/peers (endpoint)) assoc-in [peer-id :heartbeat-timer]
-             (timer/run-after
-              (fn []
-                (send endpoint peer-id [:via.endpoint/heartbeat])
-                (heartbeat endpoint peer-id))
-              heartbeat-interval)))))
+    (when-let [heartbeat-timer (get-in @(adapter/peers (endpoint)) [peer-id :heartbeat-timer])]
+      (timer/cancel heartbeat-timer))
+    (let [{:keys [heartbeat-interval
+                  heartbeat-timeout
+                  heartbeat-fail-threshold]} (adapter/opts (endpoint))
+          send-heartbeat (atom nil)
+          sent-timestamp (atom (t/now))
+          handle-failure (fn [reason]
+                           (let [peers (swap! (adapter/peers (endpoint))
+                                              (fn [peers]
+                                                (if (contains? peers peer-id)
+                                                  (update-in peers [peer-id :heartbeat-failure-count]
+                                                             (fn [failure-count]
+                                                               (inc (or failure-count 0))))
+                                                  peers)))
+                                 failure-count (get-in peers [peer-id :heartbeat-failure-count])]
+                             (if (>= failure-count heartbeat-fail-threshold)
+                               (do #?(:clj (log/debug ":via.endpoint/heartbeat failed. Reconnecting to peer." {:peer-id peer-id})
+                                      :cljs (js/console.debug ":via.endpoint/heartbeat failed. Reconnecting to peer." #js {:peer-id peer-id}))
+                                   (disconnect endpoint peer-id true))
+                               (@send-heartbeat))))
+          handle-success (fn []
+                           (let [peers (swap! (adapter/peers (endpoint))
+                                              (fn [peers]
+                                                (if (contains? peers peer-id)
+                                                  (assoc-in peers [peer-id :heartbeat-failure-count] 0)
+                                                  peers)))]
+                             (@send-heartbeat)))]
+      (reset! send-heartbeat (fn []
+                               (let [elapsed (- (t/into :long (t/now))
+                                                (t/into :long @sent-timestamp))
+                                     heartbeat-interval (max 0 (- heartbeat-interval elapsed))]
+                                 (swap! (adapter/peers (endpoint)) assoc-in [peer-id :heartbeat-timer]
+                                        (timer/run-after
+                                         (fn []
+                                           (reset! sent-timestamp (t/now))
+                                           (send endpoint peer-id [:via.endpoint/heartbeat]
+                                                 :timeout heartbeat-timeout
+                                                 :on-success handle-success
+                                                 :on-failure (partial handle-failure :failure)
+                                                 :on-timeout (partial handle-failure :timeout)))
+                                         heartbeat-interval)))))
+      (@send-heartbeat))))
 
 (defn connect
   ([endpoint peer-address]

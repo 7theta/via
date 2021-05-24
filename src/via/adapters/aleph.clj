@@ -34,8 +34,8 @@
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
                      (send* endpoint peer-id message))
-                   (disconnect [endpoint peer-id]
-                     (disconnect* endpoint peer-id))
+                   (disconnect [endpoint peer-id reconnect]
+                     (disconnect* endpoint peer-id reconnect))
                    (connect [endpoint address]
                      (connect* endpoint address))
                    (shutdown [endpoint]
@@ -49,9 +49,11 @@
 
 (defn- send*
   [endpoint peer-id message]
-  (if-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
-    (s/put! connection message)
-    (log/info "No connection for peer" peer-id)))
+  (if message
+    (if-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
+      (s/put! connection message)
+      (log/warn "No connection for peer" peer-id))
+    (log/warn "Tried to put nil message on channel" {:peer-id peer-id})))
 
 (defn- connect*
   [endpoint address {:keys [on-success on-failure]}]
@@ -60,8 +62,8 @@
          nil)))
 
 (defn- disconnect*
-  [endpoint peer-id]
-  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] false)
+  [endpoint peer-id reconnect]
+  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
   (.close (get-in @(adapter/peers endpoint) [peer-id :connection])))
 
 (defn- handle-request
@@ -86,13 +88,9 @@
       (d/chain (s/take! connection ::drained)
                (fn [msg]
                  (if (identical? ::drained msg)
-                   (do (log/info ::drained msg)
-                       ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))
+                   (do ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))
                        ::drained)
-                   (try ((adapter/handle-message endpoint)
-                         (constantly endpoint)
-                         (assoc request :peer-id peer-id)
-                         msg)
+                   (try ((adapter/handle-message endpoint) (constantly endpoint) (assoc request :peer-id peer-id) msg)
                         (catch Exception e
                           (log/error "Exception occurred handling message" e)))))
                (fn [result]

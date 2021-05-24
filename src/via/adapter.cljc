@@ -15,7 +15,7 @@
 (defprotocol Endpoint
   (opts [endpoint])
   (send [endpoint peer-id message])
-  (disconnect [endpoint peer-id])
+  (disconnect [endpoint peer-id reconnect])
   (connect [endpoint address])
   (shutdown [endpoint]))
 
