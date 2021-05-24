@@ -40,7 +40,11 @@
 
 (defn- send*
   [endpoint peer-id message]
-  (async/put! (get-in @(adapter/peers endpoint) [peer-id :connection :sink]) message))
+  (if-let [sink (get-in @(adapter/peers endpoint) [peer-id :connection :sink])]
+    (async/put! sink message)
+    (js/console.warn "No connection for peer"
+                     #js {:peer-id peer-id
+                          :message message})))
 
 (defn- connect*
   [endpoint address]
