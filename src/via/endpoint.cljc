@@ -143,8 +143,8 @@
 (defn broadcast
   "Asynchronously sends `message` to all connected clients"
   [endpoint message]
-  (doseq [[peer-id _] (adapter/peers (endpoint))]
-    (send endpoint message peer-id)))
+  (doseq [[peer-id _] @(adapter/peers (endpoint))]
+    (send endpoint peer-id message)))
 
 (defn disconnect
   ([endpoint peer-id]
@@ -435,7 +435,7 @@
 (defn- handle-connect
   [endpoint peer]
   (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
-  (handle-event endpoint :via.endpoint.peer/connect peer))
+  (handle-event endpoint :via.endpoint.peer/connected peer))
 
 (defn- cancel-reconnect-task
   [endpoint peer-id]
@@ -450,7 +450,7 @@
       (timer/cancel heartbeat-timer))
     (cancel-reconnect-task endpoint peer-id)
     (swap! (adapter/peers (endpoint)) dissoc peer-id)
-    (handle-event endpoint :via.endpoint.peer/remove peer)))
+    (handle-event endpoint :via.endpoint.peer/removed peer)))
 
 (defn- reconnect
   ([endpoint peer-address peer-id]
@@ -475,7 +475,7 @@
 
 (defn- handle-disconnect
   [endpoint {:keys [role request] :as peer}]
-  (handle-event endpoint :via.endpoint.peer/disconnect peer)
+  (handle-event endpoint :via.endpoint.peer/disconnected peer)
   (if (and (= :originator role)
            (not (false? (:reconnect peer))))
     (reconnect endpoint (:peer-address request) (:id peer))

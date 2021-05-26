@@ -45,16 +45,16 @@
     {:endpoint endpoint
      :inbound-subs inbound-subs
      :outbound-subs outbound-subs
-     :listeners [{:key :via.endpoint.peer/remove
-                  :listener (via/add-event-listener endpoint :via.endpoint.peer/remove
+     :listeners [{:key :via.endpoint.peer/removed
+                  :listener (via/add-event-listener endpoint :via.endpoint.peer/removed
                                                     (fn [[_ {:keys [id]}]]
                                                       (dispose-peer endpoint id)))}
-                 {:key :via.endpoint.peer/open
-                  :listener (via/add-event-listener endpoint :via.endpoint.peer/connect
+                 {:key :via.endpoint.peer/connected
+                  :listener (via/add-event-listener endpoint :via.endpoint.peer/connected
                                                     (fn [[_ {:keys [id]}]]
                                                       (reconnect-subs endpoint id)))}
-                 {:key :via.endpoint.peer/disconnect
-                  :listener (via/add-event-listener endpoint :via.endpoint.peer/disconnect
+                 {:key :via.endpoint.peer/disconnected
+                  :listener (via/add-event-listener endpoint :via.endpoint.peer/disconnected
                                                     (fn [[_ {:keys [id]}]]
                                                       (dispose-inbound endpoint id)))}]}))
 

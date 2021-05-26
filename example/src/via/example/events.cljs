@@ -1,7 +1,6 @@
 (ns via.example.events
   (:require [via.example.db :as db]
-            [via.events :refer [reg-event-via]]
-            [via.fx :as via-fx]
+            [signum.events :as se]
             [re-frame.core :refer [reg-event-db reg-event-fx]]
             [via.endpoint :as via]))
 
@@ -34,7 +33,7 @@
  (fn [_ error]
    (js/console.error ":via.example.increment-count/timed-out" (pr-str error))))
 
-(reg-event-via
+(se/reg-event
  :via.example/server-broadcast
  (fn [_ [_ message]]
    (js/console.log "Server Push:" (clj->js message))))

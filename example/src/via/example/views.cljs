@@ -1,6 +1,5 @@
 (ns via.example.views
-  (:require [via.subs :refer [subscribe]]
-            [re-frame.core :refer [dispatch]]))
+  (:require [via.core :refer [subscribe dispatch]]))
 
 (defn main-panel []
   [:div {:style {:margin "40px"}}

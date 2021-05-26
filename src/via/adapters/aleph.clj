@@ -40,7 +40,7 @@
                      (connect* endpoint address))
                    (shutdown [endpoint]
                      ))]
-    (adapter/add-event-listener endpoint :via.endpoint.peer/connect (partial handle-connection endpoint))
+    (adapter/add-event-listener endpoint :via.endpoint.peer/connected (partial handle-connection endpoint))
     (fn ([] endpoint)
       ([request]
        (handle-request endpoint request :websocket-options websocket-options)))))

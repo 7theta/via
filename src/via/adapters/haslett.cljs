@@ -28,7 +28,7 @@
                      (connect* endpoint address))
                    (shutdown [endpoint]
                      ))]
-    (adapter/add-event-listener endpoint :via.endpoint.peer/connect (partial handle-connection endpoint))
+    (adapter/add-event-listener endpoint :via.endpoint.peer/connected (partial handle-connection endpoint))
     (swap! (adapter/context endpoint) merge
            {::format (reify fmt/Format
                        (read  [_ s] s)
@@ -82,7 +82,6 @@
                        (do ((adapter/handle-message endpoint) (constantly endpoint) (assoc request :peer-id peer-id) message)
                            (recur)))
                close-status ([status]
-                             (do ((adapter/handle-disconnect endpoint) (constantly endpoint)
-                                  (get @(adapter/peers endpoint) peer-id))))))
+                             (do ((adapter/handle-disconnect endpoint) (constantly endpoint) (get @(adapter/peers endpoint) peer-id))))))
            (catch js/Error e
              (js/console.error "Error occurred in via.adapters.haslett/handle-connection" e))))))

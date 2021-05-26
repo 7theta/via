@@ -6,8 +6,8 @@
 ;;; Public
 
 (def config
-  {:via/endpoint {}
-   :via/events {:endpoint (ig/ref :via/endpoint)}
+  {:via/endpoint {:exports {:namespaces #{:via.example/subs
+                                          :via.example/events}}}
    :via/subs {:endpoint (ig/ref :via/endpoint)}
    :via/http-server {:ring-handler (ig/ref :via.example/ring-handler)}
    :via.example/ring-handler {:via-handler (ig/ref :via/endpoint)}
