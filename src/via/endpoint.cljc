@@ -13,6 +13,7 @@
             #?(:cljs [utilis.js :as j])
             [via.util.promise :as p]
             [via.adapter :as adapter]
+            #?(:clj [via.telemetry])
             [via.util.id :refer [uuid]]
             [via.defaults :as defaults]
             [signum.fx :as sfx]
@@ -590,10 +591,12 @@
                            :via.endpoint.throughput.messages-sent/meter
 
                            ;; [latency] - time between message received and a reply being eventually sent
-                           :via.endpoint.latency.send-reply/timer
+                           :via.endpoint.latency.send-reply/timer ;; TODO
 
                            ;; [latency] - queue wait time / how long does a message sit in the queue before
                            ;;             'handle-message' is eventually called.
-                           :via.endpoint.latency.queue-wait-time/timer]
+                           :via.endpoint.latency.queue-wait-time/timer ;; TODO
+
+                           ]
                           (map (fn [key] [key (key->metric key)]))
                           (into {}))})))

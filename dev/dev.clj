@@ -13,7 +13,6 @@
   (:require [via.example.config :refer [config]]
             [via.core :as via]
             [via.endpoint :as ve]
-            [via.telemetry :as telemetry]
 
             [integrant.core :as ig]
 

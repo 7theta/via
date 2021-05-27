@@ -8,8 +8,7 @@
 ;;   You must not remove this notice, or any others, from this software.
 
 (ns via.telemetry
-  (:require [via.subs :as subs]
-            [via.adapter :as adapter]
+  (:require [via.adapter :as adapter]
             [metrics.core :as metrics]
             [metrics.gauges :as gauges]
             [metrics.counters :as counters]
@@ -24,16 +23,18 @@
                   (fn? endpoint) (adapter/opt (endpoint) :metrics)
                   :else (throw (ex-info "Unable to interpret endpoint metrics" {:endpoint endpoint})))
         {:keys [keys static dynamic]} metrics]
-    (->> @keys
-         (map (fn [[key [metric-group metric-type metric-name :as metric-title]]]
-                {:key key
-                 :metric-title metric-title
-                 :value (condp = (keyword metric-type)
-                          :counter (counters/value (counters/counter metric-title))
-                          :meter (meters/rates (meters/meter metric-title))
-                          :histogram (histograms/percentiles (histograms/histogram metric-title))
-                          :timer (timers/percentiles (timers/timer metric-title))
-                          (throw (ex-info "Unrecognized metric type"
-                                          {:key key
-                                           :metric-title metric-title})))}))
-         (group-by :key))))
+    (map (fn [[key [metric-group metric-type metric-name :as metric-title]]]
+           {:key key
+            :group metric-group
+            :type (keyword metric-type)
+            :name metric-name
+            :title metric-title
+            :value (condp = (keyword metric-type)
+                     :counter (counters/value (counters/counter metric-title))
+                     :meter (meters/rates (meters/meter metric-title))
+                     :histogram (histograms/percentiles (histograms/histogram metric-title))
+                     :timer (timers/percentiles (timers/timer metric-title))
+                     (throw (ex-info "Unrecognized metric type"
+                                     {:key key
+                                      :metric-title metric-title})))})
+         @keys)))
