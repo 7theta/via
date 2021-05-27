@@ -9,26 +9,31 @@
 
 (ns via.telemetry
   (:require [via.subs :as subs]
+            [via.adapter :as adapter]
             [metrics.core :as metrics]
             [metrics.gauges :as gauges]
             [metrics.counters :as counters]
             [metrics.histograms :as histograms]
-            [metrics.timers :as timers]))
+            [metrics.timers :as timers]
+            [metrics.meters :as meters]))
 
 (defn metrics
-  ([]
-   (merge
-
-    (reduce (fn [query-v->metrics query-v]
-              (assoc-in query-v->metrics [:subs query-v] (metrics query-v)))
-            {:subs {:registered (gauges/value (gauges/gauge ["signum" "subs" "registered"]))
-                    :subscribed (gauges/value (gauges/gauge ["signum" "subs" "subscribed"]))
-                    :active (gauges/value (gauges/gauge ["signum" "subs" "active"]))
-                    :running (gauges/value (gauges/gauge ["signum" "subs" "running"]))}}
-            (subs/subs))))
-  ([query]
-   (if (keyword query)
-     {:count (counters/value (counters/counter ["signum.events/handler-fn" "counter" (str query)]))
-      :timings (timers/percentiles (timers/timer ["signum.events/handler-fn" "timer" (str query)]))}
-     {:count (counters/value (counters/counter ["signum.subs/compute-fn" "counter" (str query)]))
-      :timings (timers/percentiles (timers/timer ["signum.subs/compute-fn" "timer" (str query)]))})))
+  [endpoint]
+  (let [metrics (cond
+                  (:metrics (map? endpoint)) endpoint
+                  (fn? endpoint) (adapter/opt (endpoint) :metrics)
+                  :else (throw (ex-info "Unable to interpret endpoint metrics" {:endpoint endpoint})))
+        {:keys [keys static dynamic]} metrics]
+    (->> @keys
+         (map (fn [[key [metric-group metric-type metric-name :as metric-title]]]
+                {:key key
+                 :metric-title metric-title
+                 :value (condp = (keyword metric-type)
+                          :counter (counters/value (counters/counter metric-title))
+                          :meter (meters/rates (meters/meter metric-title))
+                          :histogram (histograms/percentiles (histograms/histogram metric-title))
+                          :timer (timers/percentiles (timers/timer metric-title))
+                          (throw (ex-info "Unrecognized metric type"
+                                          {:key key
+                                           :metric-title metric-title})))}))
+         (group-by :key))))

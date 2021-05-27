@@ -13,6 +13,7 @@
   (:require [via.example.config :refer [config]]
             [via.core :as via]
             [via.endpoint :as ve]
+            [via.telemetry :as telemetry]
 
             [integrant.core :as ig]
 
@@ -50,3 +51,15 @@
 (ig/load-namespaces dev-config)
 
 (integrant.repl/set-prep! (constantly dev-config))
+
+(comment
+
+  (dissoc
+   (telemetry/metrics
+    (:via/http-server system))
+   :via.http.requests.uri/timer)
+
+  (telemetry/metrics
+   (:via/endpoint system))
+
+  )

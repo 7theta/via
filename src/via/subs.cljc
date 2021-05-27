@@ -21,6 +21,7 @@
             [distantia.core :refer [diff]]
             [integrant.core :as ig]
             #?(:clj [metrics.counters :as counters])
+            #?(:clj [metrics.meters :as meters])
             #?(:clj [metrics.timers :as timers])
             #?(:clj [clojure.tools.logging :as log])))
 
@@ -183,6 +184,7 @@
   (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-inbound/timer)]
        :cljs [identity])
    (locking subscription-lock
+     #?(:clj (meters/mark! (adapter/static-metric (endpoint) :via.endpoint.throughput.inbound-subs/meter)))
      (if-let [signal (when (and (via/sub? endpoint query-id)
                                 (ss/sub? query-id))
                        (binding [ss/*context* {:endpoint endpoint
