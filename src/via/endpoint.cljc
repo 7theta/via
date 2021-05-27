@@ -28,6 +28,10 @@
             [integrant.core :as ig]
             [clojure.set :refer [union difference]]
             [clojure.string :as st]
+            #?(:clj [metrics.histograms :as histograms])
+            #?(:clj [metrics.meters :as meters])
+            #?(:clj [metrics.counters :as counters])
+            #?(:clj [metrics.timers :as timers])
             #?(:clj [clojure.tools.logging :as log]))
   #?(:clj (:import [java.io ByteArrayInputStream ByteArrayOutputStream])))
 
@@ -37,7 +41,8 @@
          connect disconnect
          handle-connect handle-disconnect
          handle-message handle-event
-         normalize-namespace)
+         normalize-namespace
+         #?(:clj metrics))
 
 (defmethod ig/init-key :via/endpoint
   [_ {:keys [peers
@@ -57,7 +62,9 @@
            heartbeat-timeout defaults/request-timeout
            heartbeat-enabled true}}]
   (try (let [{:keys [events subs namespaces]} exports
+             #?@(:clj [metrics (metrics)])
              endpoint (adapter (merge
+                                #?(:clj {:metrics metrics})
                                 {:event-listeners (atom (map-vals (fn [handler]
                                                                     {(uuid) handler})
                                                                   event-listeners))
@@ -73,8 +80,8 @@
                                  :handle-message (fn [& args] (apply handle-message args))
                                  :handle-disconnect (fn [& args] (apply handle-disconnect args))
                                  :handle-connect (fn [& args] (apply handle-connect args))
-                                 :decode (partial decode-message {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
-                                 :encode (partial encode-message {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
+                                 :decode (partial decode-message metrics {:handlers (merge (:read tt/handlers) (:read transit-handlers))})
+                                 :encode (partial encode-message metrics {:handlers (merge (:write tt/handlers) (:write transit-handlers))})
                                  :heartbeat-interval heartbeat-interval
                                  :heartbeat-enabled heartbeat-enabled
                                  :heartbeat-fail-threshold heartbeat-fail-threshold
@@ -107,38 +114,40 @@
                                       on-timeout timeout]
                                :or {type :event
                                     timeout 30000}}]
-  (when (not peer-id)
-    (throw (ex-info "No peer-id provided" {:message message
-                                           :peer-id peer-id
-                                           :type type
-                                           :params params
-                                           :timeout timeout})))
-  (let [message (merge (when type {:type type})
-                       (when message {:payload message})
-                       params)]
-    (if (or on-success on-failure)
-      (let [request-id (uuid)
-            message (merge message
-                           {:request-id request-id}
-                           (when timeout {:timeout timeout}))]
-        (swap! (adapter/requests (endpoint)) assoc request-id
-               {:on-success on-success
-                :on-failure on-failure
-                :on-timeout on-timeout
-                :message message
-                :timer (timer/run-after
-                        #(do (swap! (adapter/requests (endpoint)) dissoc request-id)
-                             (try ((fsafe on-timeout))
-                                  #?(:clj (catch Exception e
-                                            (log/error "Unhandled exception in timeout handler" e))
-                                     :cljs (catch js/Error e
-                                             (js/console.error "Unhandled exception in timeout handler" e)))))
-                        timeout)
-                :timeout timeout
-                :timestamp (t/now)
-                :peer-id peer-id})
-        (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))
-      (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))))
+  (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.send/timer)]
+       :cljs [identity])
+   (when (not peer-id)
+     (throw (ex-info "No peer-id provided" {:message message
+                                            :peer-id peer-id
+                                            :type type
+                                            :params params
+                                            :timeout timeout})))
+   (let [message (merge (when type {:type type})
+                        (when message {:payload message})
+                        params)]
+     (if (or on-success on-failure)
+       (let [request-id (uuid)
+             message (merge message
+                            {:request-id request-id}
+                            (when timeout {:timeout timeout}))]
+         (swap! (adapter/requests (endpoint)) assoc request-id
+                {:on-success on-success
+                 :on-failure on-failure
+                 :on-timeout on-timeout
+                 :message message
+                 :timer (timer/run-after
+                         #(do (swap! (adapter/requests (endpoint)) dissoc request-id)
+                              (try ((fsafe on-timeout))
+                                   #?(:clj (catch Exception e
+                                             (log/error "Unhandled exception in timeout handler" e))
+                                      :cljs (catch js/Error e
+                                              (js/console.error "Unhandled exception in timeout handler" e)))))
+                         timeout)
+                 :timeout timeout
+                 :timestamp (t/now)
+                 :peer-id peer-id})
+         (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))
+       (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message))))))
 
 (defn broadcast
   "Asynchronously sends `message` to all connected clients"
@@ -369,22 +378,34 @@
 ;;; Implementation
 
 (defn- encode-message
-  [handlers data]
-  #?(:clj (try (let [out (ByteArrayOutputStream. 4096)]
-                 (transit/write (transit/writer out :json handlers) data)
-                 (.toString out))
-               (catch Exception e
-                 (log/error "Exception occurred encoding message" data e)))
+  [metrics handlers data]
+  #?(:clj (timers/time!
+           (-> metrics :static :via.endpoint.encode-message/timer)
+           (let [message (try
+                           (let [out (ByteArrayOutputStream. 4096)]
+                             (transit/write (transit/writer out :json handlers) data)
+                             (.toString out))
+                           (catch Exception e
+                             (log/error "Exception occurred encoding message" data e)))]
+             (histograms/update!
+              (-> metrics :static :via.endpoint.outbound.message-size/histogram)
+              (count message))
+             message))
      :cljs (try (transit/write (transit/writer :json handlers) data)
                 (catch js/Error e
                   (js/console.error "Exception occurred encoding message" (clj->js data) e)))))
 
 (defn- decode-message
-  [handlers ^String data]
-  #?(:clj (try (let [in (ByteArrayInputStream. (.getBytes data))]
-                 (transit/read (transit/reader in :json handlers)))
-               (catch Exception e
-                 (log/error "Exception occurred decoding message" data e)))
+  [metrics handlers ^String data]
+  #?(:clj (timers/time!
+           (-> metrics :static :via.endpoint.decode-message/timer)
+           (try (do (histograms/update!
+                     (-> metrics :static :via.endpoint.inbound.message-size/histogram)
+                     (count data))
+                    (let [in (ByteArrayInputStream. (.getBytes data))]
+                      (transit/read (transit/reader in :json handlers))))
+                (catch Exception e
+                  (log/error "Exception occurred decoding message" data e))))
      :cljs (try (transit/read (transit/reader :json handlers) data)
                 (catch js/Error e
                   (js/console.error "Exception occurred encoding message" data e)))))
@@ -424,18 +445,28 @@
 
 (defn- handle-message
   [endpoint request message]
-  (let [message ((adapter/decode (endpoint)) message)
-        request (cond-> request
-                  (:request-id message) (assoc :request-id (:request-id message)))]
-    (condp = (:type message)
-      :event (handle-remote-event endpoint request message)
-      :reply (handle-reply endpoint message)
-      (handle-event endpoint :via.endpoint/unhandled-message {:message message}))))
+  (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.handle-message/timer)]
+       :cljs [identity])
+   (let [message ((adapter/decode (endpoint)) message)
+         request (cond-> request
+                   (:request-id message) (assoc :request-id (:request-id message)))]
+     (condp = (:type message)
+       :event (handle-remote-event endpoint request message)
+       :reply (handle-reply endpoint message)
+       (handle-event endpoint :via.endpoint/unhandled-message {:message message})))))
 
 (defn- handle-connect
   [endpoint peer]
-  (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
-  (handle-event endpoint :via.endpoint.peer/connected peer))
+  (let [peers (swap! (adapter/peers (endpoint)) assoc (:id peer)
+                     (assoc peer
+                            #?@(:clj [:active-timer (-> (endpoint)
+                                                        (adapter/static-metric :via.endpoint.peer.connection-duration/timer)
+                                                        (timers/start))])
+                            :connected-timestamo (t/now)))]
+    #?(:clj (histograms/update!
+             (adapter/static-metric (endpoint) :via.endpoint.active-peers/histogram)
+             (count peers)))
+    (handle-event endpoint :via.endpoint.peer/connected peer)))
 
 (defn- cancel-reconnect-task
   [endpoint peer-id]
@@ -446,11 +477,16 @@
 (defn- remove-peer
   [endpoint peer-id]
   (let [peer (get @(adapter/peers (endpoint)) peer-id)]
+    #?(:clj (when-let [active-timer (:active-timer peer)]
+              (timers/stop active-timer)))
     (when-let [heartbeat-timer (:heartbeat-timer peer)]
       (timer/cancel heartbeat-timer))
     (cancel-reconnect-task endpoint peer-id)
-    (swap! (adapter/peers (endpoint)) dissoc peer-id)
-    (handle-event endpoint :via.endpoint.peer/removed peer)))
+    (let [peers (swap! (adapter/peers (endpoint)) dissoc peer-id)]
+      #?(:clj (histograms/update!
+               (adapter/static-metric (endpoint) :via.endpoint.active-peers/histogram)
+               (count peers)))
+      (handle-event endpoint :via.endpoint.peer/removed peer))))
 
 (defn- reconnect
   ([endpoint peer-address peer-id]
@@ -499,3 +535,68 @@
     (namespace? ns) #?(:clj (keyword (.getName ns))
                        :cljs (keyword (j/call ns :getName)))
     :else (throw (ex-info "Can't normalize namespace" {:ns ns}))))
+
+#?(:clj (defn- metrics
+          []
+          (let [id (uuid)
+                keys (atom #{})
+                key->metric (fn [key & {:keys [name-suffix]}]
+                              (let [segments (st/split (namespace key) #"\.")
+                                    metric-group (str id "." (st/join "." (drop-last segments)))
+                                    metric-name (str (last segments) (when name-suffix (str "." name-suffix)))
+                                    metric-type (name key)
+                                    metric-title [metric-group metric-name metric-type]]
+                                (swap! keys conj [key metric-title])
+                                (condp = (keyword metric-type)
+                                  :counter (counters/counter metric-title)
+                                  :timer (timers/timer metric-title)
+                                  :histogram (histograms/histogram metric-title)
+                                  :meter (meters/meter metric-title)
+                                  (throw (ex-info "Unrecognized metric type" {:key key})))))]
+            {:keys keys
+             :dynamic (fn [key instance-id]
+                        ;; e.g.
+                        ;; :via.endpoint.subs.inbound/counter
+                        ;; :via.endpoint.events.dispatch/counter
+                        ;; :via.endpoint.handle-event/counter
+                        ;; :via.http.requests.uri/timer
+                        (key->metric key :name-suffix instance-id))
+             :static (->> [;; time the durations that a peer is connected for
+                           :via.endpoint.peer.connection-duration/timer
+
+                           ;; time certain critical functions on peers
+                           :via.endpoint.peer.subscribe-inbound/timer
+                           :via.endpoint.peer.dispose-inbound/timer
+                           :via.endpoint.peer.subscribe-outbound/timer
+                           :via.endpoint.peer.dispose-outbound/timer
+
+                           ;; time certain critical functions on endpoint
+                           :via.endpoint.send/timer
+                           :via.endpoint.encode-message/timer
+                           :via.endpoint.decode-message/timer
+                           :via.endpoint.handle-message/timer
+
+                           ;; track some historical values
+                           :via.endpoint.active-peers/histogram
+                           :via.endpoint.outbound.message-size/histogram
+                           :via.endpoint.inbound.message-size/histogram
+
+                           ;; throughput
+                           :via.endpoint.throughput.inbound-subs/meter
+                           :via.endpoint.throughput.inbound-events/meter
+                           :via.endpoint.throughput.messages-received/meter
+                           :via.endpoint.throughput.messages-sent/meter
+
+                           ;; [latency] - time between message received and a reply being eventually sent
+                           :via.endpoint.latency.send-reply/timer
+
+                           ;; [latency] - queue wait time / how long does a message sit in the queue before
+                           ;;             'handle-message' is eventually called.
+                           :via.endpoint.latency.queue-wait-time/timer
+
+                           ;; http server metrics
+                           :via.http.requests/meter ;; req/s
+                           :via.http.requests/timer ;; s/req
+                           ]
+                          (map (fn [key] [key (key->metric key)]))
+                          (into {}))})))

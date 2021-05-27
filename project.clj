@@ -20,6 +20,7 @@
                  [com.cognitect/transit-clj "1.0.324" :exclusions [com.fasterxml.jackson.core/jackson-core]]
                  [org.clojure/core.async "1.3.618"]
 
+                 [metrics-clojure "2.10.0"]
                  [aleph "0.4.7-alpha7"]
 
                  [ring/ring-core "1.9.3" :exclusions [ring/ring-codec]]

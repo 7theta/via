@@ -20,6 +20,8 @@
             [tempus.core :as t]
             [distantia.core :refer [diff]]
             [integrant.core :as ig]
+            #?(:clj [metrics.counters :as counters])
+            #?(:clj [metrics.timers :as timers])
             #?(:clj [clojure.tools.logging :as log])))
 
 (declare dispose-peer
@@ -70,44 +72,46 @@
 (defn subscribe
   ([endpoint peer-id query] (subscribe endpoint peer-id query nil))
   ([endpoint peer-id [query-id & _ :as query] default]
-   (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
-     (locking subscription-lock
-       (when (not (ss/sub? query-id))
-         (ss/reg-sub
-          query-id
-          (fn [query-v]
-            (let [signal (sig/signal default)
-                  reply-handler (fn [event-key]
-                                  (fn [& args]
-                                    (via/handle-event endpoint event-key
-                                                      (merge (when (seq args)
-                                                               {:reply (first args)})
-                                                             {:peer-id peer-id
-                                                              :query-v query-v
-                                                              :default default}))))
-                  remote-subscribe (fn []
-                                     (via/send endpoint peer-id
-                                               [:via.subs/subscribe
-                                                {:query-v query-v
-                                                 :callback [:via.subs.signal/updated (sub-key peer-id query-v)]}]
-                                               :on-success (reply-handler :via.subs.subscribe/success)
-                                               :on-failure (reply-handler :via.subs.subscribe/failure)
-                                               :on-timeout (reply-handler :via.subs.subscribe/timeout)
-                                               :timeout defaults/request-timeout))]
-              (remote-subscribe)
-              (locking subscription-lock
-                (swap! outbound-subs assoc (sub-key peer-id query-v)
-                       {:state (atom {:window []
-                                      :sn 0
-                                      :updated nil})
-                        :signal signal
-                        :peer-id peer-id
-                        :query-v query-v
-                        :remote-subscribe remote-subscribe}))
-              signal))
-          (fn [signal _] @signal))
-         true))
-     (ss/subscribe query))))
+   (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-outbound/timer)]
+        :cljs [identity])
+    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
+      (locking subscription-lock
+        (when (not (ss/sub? query-id))
+          (ss/reg-sub
+           query-id
+           (fn [query-v]
+             (let [signal (sig/signal default)
+                   reply-handler (fn [event-key]
+                                   (fn [& args]
+                                     (via/handle-event endpoint event-key
+                                                       (merge (when (seq args)
+                                                                {:reply (first args)})
+                                                              {:peer-id peer-id
+                                                               :query-v query-v
+                                                               :default default}))))
+                   remote-subscribe (fn []
+                                      (via/send endpoint peer-id
+                                                [:via.subs/subscribe
+                                                 {:query-v query-v
+                                                  :callback [:via.subs.signal/updated (sub-key peer-id query-v)]}]
+                                                :on-success (reply-handler :via.subs.subscribe/success)
+                                                :on-failure (reply-handler :via.subs.subscribe/failure)
+                                                :on-timeout (reply-handler :via.subs.subscribe/timeout)
+                                                :timeout defaults/request-timeout))]
+               (remote-subscribe)
+               (locking subscription-lock
+                 (swap! outbound-subs assoc (sub-key peer-id query-v)
+                        {:state (atom {:window []
+                                       :sn 0
+                                       :updated nil})
+                         :signal signal
+                         :peer-id peer-id
+                         :query-v query-v
+                         :remote-subscribe remote-subscribe}))
+               signal))
+           (fn [signal _] @signal))
+          true))
+      (ss/subscribe query)))))
 
 (defn dispose
   [endpoint peer-id query]
@@ -136,13 +140,15 @@
                           (map sub-key->query-v))]
        (dispose-inbound endpoint peer-id query-v))))
   ([endpoint peer-id query-v]
-   (locking subscription-lock
-     (boolean
-      (let [inbound-subs (::inbound-subs @(adapter/context (endpoint)))]
-        (when-let [{:keys [signal watch-key]} (get @inbound-subs (sub-key peer-id query-v))]
-          (remove-watch signal watch-key)
-          (swap! inbound-subs dissoc (sub-key peer-id query-v))
-          true))))))
+   (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.dispose-inbound/timer)]
+        :cljs [identity])
+    (locking subscription-lock
+      (boolean
+       (let [inbound-subs (::inbound-subs @(adapter/context (endpoint)))]
+         (when-let [{:keys [signal watch-key]} (get @inbound-subs (sub-key peer-id query-v))]
+           (remove-watch signal watch-key)
+           (swap! inbound-subs dissoc (sub-key peer-id query-v))
+           true)))))))
 
 (defn dispose-outbound
   ([endpoint peer-id]
@@ -153,60 +159,64 @@
                           (map sub-key->query-v))]
        (dispose-outbound endpoint peer-id query-v))))
   ([endpoint peer-id query-v]
-   (locking subscription-lock
-     (boolean
-      (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
-            reply-handler (fn [event-key]
-                            (fn [& args]
-                              (via/handle-event endpoint event-key
-                                                (merge (when (seq args)
-                                                         {:reply (first args)})
-                                                       {:peer-id peer-id
-                                                        :query-v query-v}))))]
-        (via/send endpoint peer-id
-                  [:via.subs/dispose {:query-v query-v}]
-                  :on-success (reply-handler :via.subs.dispose/success)
-                  :on-failure (reply-handler :via.subs.dispose/failure))
-        (swap! outbound-subs dissoc (sub-key peer-id query-v))
-        true)))))
+   (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.dispose-outbound/timer)]
+        :cljs [identity])
+    (locking subscription-lock
+      (boolean
+       (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
+             reply-handler (fn [event-key]
+                             (fn [& args]
+                               (via/handle-event endpoint event-key
+                                                 (merge (when (seq args)
+                                                          {:reply (first args)})
+                                                        {:peer-id peer-id
+                                                         :query-v query-v}))))]
+         (via/send endpoint peer-id
+                   [:via.subs/dispose {:query-v query-v}]
+                   :on-success (reply-handler :via.subs.dispose/success)
+                   :on-failure (reply-handler :via.subs.dispose/failure))
+         (swap! outbound-subs dissoc (sub-key peer-id query-v))
+         true))))))
 
 (defn- subscribe-inbound
   [endpoint request [query-id & _ :as query-v] callback]
-  (locking subscription-lock
-    (if-let [signal (when (and (via/sub? endpoint query-id)
-                               (ss/sub? query-id))
-                      (binding [ss/*context* {:endpoint endpoint
-                                              :request request}]
-                        (ss/subscribe query-v)))]
-      (let [peer-id (:peer-id request)
-            sequence-number (atom (long 0))
-            watch-key (str ":via-" query-v "(" peer-id ")")
-            send-value! #(try (via/send endpoint peer-id
-                                        (conj (vec callback)
-                                              {:query-v query-v
-                                               :change %
-                                               :sn (swap! sequence-number inc)}))
-                              true
-                              (catch #?(:clj Exception :cljs js/Error) e
-                                #?(:clj (log/error :via/send-value "->" peer-id e)
-                                   :cljs (js/console.error ":via/send-value" "->" peer-id "\n" e))
-                                (dispose-inbound endpoint peer-id)
-                                false))]
-        (swap! (::inbound-subs @(adapter/context (endpoint)))
-               assoc (sub-key peer-id query-v)
-               {:signal signal
-                :watch-key watch-key})
-        (add-watch signal watch-key (fn [_ _ old new]
-                                      (when (not= old new)
-                                        (send-value! (if (or (and (map? new) (map? old))
-                                                             (and (vector? new) (vector? old)))
-                                                       [:p (diff old new)]
-                                                       [:v new])))))
-        (send-value! [:v @signal]))
-      (do (via/handle-event endpoint :via.subs/unknown-sub
-                            {:query-v query-v
-                             :callback callback})
-          false))))
+  (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-inbound/timer)]
+       :cljs [identity])
+   (locking subscription-lock
+     (if-let [signal (when (and (via/sub? endpoint query-id)
+                                (ss/sub? query-id))
+                       (binding [ss/*context* {:endpoint endpoint
+                                               :request request}]
+                         (ss/subscribe query-v)))]
+       (let [peer-id (:peer-id request)
+             sequence-number (atom (long 0))
+             watch-key (str ":via-" query-v "(" peer-id ")")
+             send-value! #(try (via/send endpoint peer-id
+                                         (conj (vec callback)
+                                               {:query-v query-v
+                                                :change %
+                                                :sn (swap! sequence-number inc)}))
+                               true
+                               (catch #?(:clj Exception :cljs js/Error) e
+                                 #?(:clj (log/error :via/send-value "->" peer-id e)
+                                    :cljs (js/console.error ":via/send-value" "->" peer-id "\n" e))
+                                 (dispose-inbound endpoint peer-id)
+                                 false))]
+         (swap! (::inbound-subs @(adapter/context (endpoint)))
+                assoc (sub-key peer-id query-v)
+                {:signal signal
+                 :watch-key watch-key})
+         (add-watch signal watch-key (fn [_ _ old new]
+                                       (when (not= old new)
+                                         (send-value! (if (or (and (map? new) (map? old))
+                                                              (and (vector? new) (vector? old)))
+                                                        [:p (diff old new)]
+                                                        [:v new])))))
+         (send-value! [:v @signal]))
+       (do (via/handle-event endpoint :via.subs/unknown-sub
+                             {:query-v query-v
+                              :callback callback})
+           false)))))
 
 (defn- split-contiguous
   [last-sn window]

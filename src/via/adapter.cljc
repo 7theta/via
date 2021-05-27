@@ -63,6 +63,16 @@
   [endpoint]
   (opt endpoint :requests))
 
+(defn static-metric
+  [endpoint key]
+  (-> (opt endpoint :metrics)
+      :static
+      (get key)))
+
+(defn dynamic-metric
+  [endpoint key instance-id]
+  ((:dynamic (opt endpoint :metrics)) key instance-id))
+
 (defn add-event-listener
   [endpoint key listener]
   (let [listener-id (uuid)]
