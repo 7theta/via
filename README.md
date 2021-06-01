@@ -16,4 +16,4 @@ authentication strategies.
 
 Copyright © 2015-2020 7theta
 
-Distributed under the Eclipse Public License.
+Distributed under the MIT License.

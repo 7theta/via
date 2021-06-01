@@ -1,8 +1,7 @@
 ;;   Copyright (c) 7theta. All rights reserved.
 ;;   The use and distribution terms for this software are covered by the
-;;   Eclipse Public License 1.0 (http://www.eclipse.org/legal/epl-v10.html)
-;;   which can be found in the LICENSE file at the root of this
-;;   distribution.
+;;   MIT License (https://opensource.org/licenses/MIT) which can also be
+;;   found in the LICENSE file at the root of this distribution.
 ;;
 ;;   By using this software in any fashion, you are agreeing to be bound by
 ;;   the terms of this license.
@@ -12,6 +11,8 @@
   "Tools for interactive development with the REPL. This file should
   not be included in a production build of the application."
   (:require [via.example.config :refer [config]]
+            [via.core :as via]
+            [via.endpoint :as ve]
 
             [integrant.core :as ig]
 
@@ -25,7 +26,12 @@
             [clojure.repl :refer [apropos dir doc find-doc pst source]]
             [clojure.test :refer [run-tests run-all-tests]]
             [clojure.pprint :refer [pprint]]
-            [clojure.reflect :refer [reflect]]))
+            [clojure.reflect :refer [reflect]]
+
+            [signum.events :as se]
+            [signum.subs :as ss]
+            [via.subs :as vs]
+            [signum.signal :as sig]))
 
 (disable-reload! (find-ns 'integrant.core))
 

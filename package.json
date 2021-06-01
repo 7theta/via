@@ -1,11 +1,11 @@
 {
     "devDependencies": {
         "@js-joda/core": "^3.2.0",
-        "create-react-class": "^15.6.3",
-        "react": "^16.8.6",
-        "react-dom": "^16.8.6",
-        "shadow-cljs": "^2.8.36"
-        "date-fns": "^2.16.1",
-        "date-fns-tz": "^1.0.12"
+        "create-react-class": "^15.7.0",
+        "date-fns": "^2.21.1",
+        "date-fns-tz": "^1.1.4",
+        "react": "^17.0.2",
+        "react-dom": "^17.0.2",
+        "shadow-cljs": "^2.12.5"
     }
 }

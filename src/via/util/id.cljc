@@ -7,17 +7,10 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(ns via.defaults
-  #?(:cljs (:require [utilis.js :as j])))
+(ns via.util.id
+  #?(:cljs (:refer-clojure :exclude [uuid])))
 
-(def default-via-endpoint "/via")
-(def protocol-version 2)
-(def request-timeout 10000)
-(def heartbeat-interval 30000)
-(def max-reconnect-interval 5000)
-
-#?(:cljs
-   (def default-via-url
-     (when-let [location (j/get js/window :location)]
-       (str (if (= "http:" (j/get location :protocol)) "ws://" "wss://")
-            (j/get location :host) default-via-endpoint))))
+(defn uuid
+  []
+  #?(:clj (str (java.util.UUID/randomUUID))
+     :cljs (str (random-uuid))))

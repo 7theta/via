@@ -1,11 +1,11 @@
 (ns via.example.events
-  (:require [via.events :refer [reg-event-via]]))
+  (:require [signum.events :as se]))
 
 (defonce counter (atom 0))
 
-(reg-event-via
+(se/reg-event
  :api.example/increment-count
  []
  (fn [_ _]
-   {:via/reply (swap! counter inc)
-    :via/status 200}))
+   {:via/reply {:body (swap! counter inc)
+                :status 200}}))
