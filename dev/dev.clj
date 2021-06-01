@@ -50,15 +50,3 @@
 (ig/load-namespaces dev-config)
 
 (integrant.repl/set-prep! (constantly dev-config))
-
-(comment
-
-  (dissoc
-   (telemetry/metrics
-    (:via/http-server system))
-   :via.http.requests.uri/timer)
-
-  (telemetry/metrics
-   (:via/endpoint system))
-
-  )

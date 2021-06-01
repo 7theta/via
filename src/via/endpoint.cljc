@@ -127,7 +127,7 @@
        (let [message (merge (when type {:type type})
                             (when message {:payload message})
                             params)]
-         (if (or on-success on-failure)
+         (if (or on-success on-failure on-timeout)
            (let [request-id (uuid)
                  message (merge message
                                 {:request-id request-id}
@@ -150,6 +150,26 @@
                      :peer-id peer-id})
              (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))
            (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))))))
+
+(defn send-to-tag
+  [endpoint tag message & {:keys [type timeout params
+                                  on-success
+                                  on-failure
+                                  on-timeout timeout]
+                           :or {type :event
+                                timeout 30000}}]
+  (doseq [peer-id (->> @(adapter/peers (endpoint))
+                       (filter (fn [[peer-id {:keys [tags]}]]
+                                 (get tags tag)))
+                       (map first))]
+    (send endpoint peer-id message
+          :type type
+          :timeout timeout
+          :params params
+          :on-success on-success
+          :on-failure on-failure
+          :on-timeout on-timeout
+          :timeout timeout)))
 
 (defn broadcast
   "Asynchronously sends `message` to all connected clients"

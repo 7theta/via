@@ -40,7 +40,8 @@
                    :clean-targets ^{:protect false} ["example/resources/public/js/compiled" "target"]
                    :env {:malli "true"}
                    :plugins [[lein-environ "0.4.0"]]
-                   :dependencies [[binaryage/devtools "1.0.3"]
+                   :dependencies [[org.clojure/test.check "1.1.0"]
+                                  [binaryage/devtools "1.0.3"]
                                   [thheller/shadow-cljs "2.12.5"]
                                   [integrant/repl "0.3.2"]
                                   [org.clojure/clojurescript "1.10.844"]
