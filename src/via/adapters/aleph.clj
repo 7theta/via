@@ -56,15 +56,16 @@
     (log/warn "Tried to put nil message on channel" {:peer-id peer-id})))
 
 (defn- connect*
-  [endpoint address {:keys [on-success on-failure]}]
+  [endpoint address]
   (try @(http/websocket-client address)
        (catch Exception e
          nil)))
 
 (defn- disconnect*
   [endpoint peer-id reconnect]
-  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
-  (.close (get-in @(adapter/peers endpoint) [peer-id :connection])))
+  (when-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
+    (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
+    (.close connection)))
 
 (defn- handle-request
   [endpoint request & {:keys [websocket-options]}]

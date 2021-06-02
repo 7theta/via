@@ -125,7 +125,7 @@
                                                 :timeout timeout})))
        #?(:clj (meters/mark! (adapter/static-metric (endpoint) :via.endpoint.throughput.messages-sent/meter)))
        (let [message (merge (when type {:type type})
-                            (when message {:payload message})
+                            (when message {:body message})
                             params)]
          (if (or on-success on-failure on-timeout)
            (let [request-id (uuid)
@@ -312,16 +312,21 @@
                :request {:peer-id peer-id
                          :peer-address peer-address}}]
      (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
-     #?(:clj (when-let [connection (adapter/connect (endpoint) peer-address)]
-               ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
-               (heartbeat endpoint peer-id)
-               peer-id)
+     #?(:clj (if-let [connection (adapter/connect (endpoint) peer-address)]
+               (do ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
+                   (heartbeat endpoint peer-id)
+                   peer-id)
+               (do (swap! (adapter/peers (endpoint)) dissoc (:id peer))
+                   nil))
         :cljs (-> (endpoint)
                   (adapter/connect peer-address)
                   (j/call :then (fn [connection]
                                   ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
                                   (heartbeat endpoint peer-id)
-                                  peer-id)))))))
+                                  peer-id))
+                  (j/call :catch (fn [error]
+                                   (swap! (adapter/peers (endpoint)) dissoc (:id peer))
+                                   (throw error))))))))
 
 (defn send-reply
   [endpoint peer-id request-id {:keys [status body]}]
@@ -364,7 +369,7 @@
                    {:reply (merge {:type :reply
                                    :reply-to event
                                    :status status}
-                                  (when body {:payload body}))}))))
+                                  (when body {:body body}))}))))
 
 (sfx/reg-fx
  :via.session-context/replace
@@ -437,7 +442,7 @@
   (if-let [request (get @(adapter/requests (endpoint)) (:request-id reply))]
     (do ((fsafe timer/cancel) (:timer request))
         (let [f (get {200 (:on-success request)} (:status reply) (:on-failure request))]
-          (try ((fsafe f) (select-keys reply [:status :payload]))
+          (try ((fsafe f) (select-keys reply [:status :body]))
                #?(:clj (catch Exception e
                          (log/error "Unhandled exception in reply handler" e))
                   :cljs (catch js/Error e
@@ -453,9 +458,9 @@
                             :body {:error :via.endpoint/unknown-event}})))
 
 (defn- handle-remote-event
-  [endpoint request {:keys [payload] :as message}]
+  [endpoint request {:keys [body] :as message}]
   #?(:clj (meters/mark! (adapter/static-metric (endpoint) :via.endpoint.throughput.inbound-events/meter)))
-  (let [[event-id & _ :as event] payload]
+  (let [[event-id & _ :as event] body]
     (cond
       (or (not (event? endpoint event-id))
           (not (se/event? event-id)))
