@@ -19,26 +19,28 @@
             [clojure.test.check :as tc]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop :include-macros true]
-            [clojure.test.check.clojure-test :refer [defspec]])
+            [clojure.test.check.clojure-test :refer [defspec]]
+            [via.adapter :as adapter])
   (:import [java.net ServerSocket]))
 
 ;;; Endpoint Setup
 
+(def lock (Object.))
+
 (defn- allocate-free-port!
   []
-  (let [socket (ServerSocket. 0)]
-    (.setReuseAddress socket true)
-    (let [port (.getLocalPort socket)]
-      (try (.close socket) (catch Exception _))
-      port)))
+  (locking lock
+    (let [socket (ServerSocket. 0)]
+      (.setReuseAddress socket true)
+      (let [port (.getLocalPort socket)]
+        (try (.close socket) (catch Exception _))
+        port))))
 
 (defmethod ig/init-key :via.core-test/ring-handler
   [_ {:keys [via-handler]}]
   (-> (compojure/routes
        (GET default-via-endpoint ring-req (via-handler ring-req)))
       (ring-defaults/wrap-defaults ring-defaults/site-defaults)))
-
-(def lock (Object.))
 
 (defn default-event-listener
   [[event-id event]]
@@ -50,18 +52,27 @@
 
 (defn peer
   ([] (peer nil))
-  ([{:keys [exports port] :or {port (allocate-free-port!)}}]
-   (let [peer (ig/init
-               {:via/endpoint {:exports exports
-                               :event-listeners {:default default-event-listener}}
-                :via/subs {:endpoint (ig/ref :via/endpoint)}
-                :via/http-server {:ring-handler (ig/ref :via.core-test/ring-handler)
-                                  :http-port port}
-                :via.core-test/ring-handler {:via-handler (ig/ref :via/endpoint)}})]
-     {:peer peer
-      :endpoint (:via/endpoint peer)
-      :shutdown #(ig/halt! peer)
-      :address (str "ws://localhost:" port default-via-endpoint)})))
+  ([{:keys [exports]}]
+   (loop [attempts 3]
+     (let [result (try (let [port (allocate-free-port!)
+                             peer (ig/init
+                                   {:via/endpoint {:exports exports
+                                                   :event-listeners {:default default-event-listener}}
+                                    :via/subs {:endpoint (ig/ref :via/endpoint)}
+                                    :via/http-server {:ring-handler (ig/ref :via.core-test/ring-handler)
+                                                      :http-port port}
+                                    :via.core-test/ring-handler {:via-handler (ig/ref :via/endpoint)}})]
+                         {:peer peer
+                          :endpoint (:via/endpoint peer)
+                          :shutdown #(ig/halt! peer)
+                          :address (str "ws://localhost:" port default-via-endpoint)})
+                       (catch Exception e
+                         (if (zero? attempts)
+                           (throw e)
+                           ::recur)))]
+       (if (not= result ::recur)
+         result
+         (recur (dec attempts)))))))
 
 (defn shutdown
   [{:keys [shutdown] :as peer}]
@@ -120,14 +131,38 @@
                          (shutdown peer-2))))))
 
 (defspec subs-cleanup-properly
-  25
+  10
   (prop/for-all [value gen/any]
-                (do true)))
-
-(defspec peers-cleanup-properly
-  25
-  (prop/for-all [value gen/any]
-                (do true)))
+                (let [sub-id (str (gensym) "/sub")
+                      peer-1 (peer {:exports {:subs #{sub-id}}})
+                      peer-2 (peer)
+                      value-signal (sig/signal nil)]
+                  (ss/reg-sub sub-id (fn [_] @value-signal))
+                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])
+                             result (atom nil)]
+                         (add-watch sub ::watch (fn [_ _ _ value]
+                                                  (reset! result value)))
+                         (sig/alter! value-signal (constantly value))
+                         (Thread/sleep 500)
+                         (remove-watch sub ::watch)
+                         (Thread/sleep 500)
+                         (shutdown peer-2)
+                         (Thread/sleep 500)
+                         (let [{:keys [peers context]} (adapter/opts ((:endpoint peer-1)))
+                               context @context]
+                           (boolean
+                            (and (coll? @peers)
+                                 (empty? @peers)
+                                 (coll? @(:via.subs/inbound-subs context))
+                                 (empty? @(:via.subs/inbound-subs context))
+                                 (coll? @(:via.subs/outbound-subs context))
+                                 (empty? @(:via.subs/outbound-subs context))))))
+                       (catch Exception e
+                         (println e)
+                         (shutdown peer-2)
+                         false)
+                       (finally
+                         (shutdown peer-1))))))
 
 (defspec expose-api-prevents-access
   25
