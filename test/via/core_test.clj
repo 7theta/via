@@ -52,12 +52,11 @@
 
 (defn peer
   ([] (peer nil))
-  ([{:keys [exports]}]
+  ([endpoint-config]
    (loop [attempts 3]
      (let [result (try (let [port (allocate-free-port!)
                              peer (ig/init
-                                   {:via/endpoint {:exports exports
-                                                   :event-listeners {:default default-event-listener}}
+                                   {:via/endpoint endpoint-config
                                     :via/subs {:endpoint (ig/ref :via/endpoint)}
                                     :via/http-server {:ring-handler (ig/ref :via.core-test/ring-handler)
                                                       :http-port port}
@@ -100,7 +99,8 @@
                                          (connect peer-2 peer-1)
                                          [event-id value])))
                        (catch Exception e
-                         (println e)
+                         (locking lock
+                           (println e))
                          false)
                        (finally
                          (shutdown peer-1)
@@ -124,7 +124,8 @@
                          (remove-watch sub ::watch)
                          (= @result (last value)))
                        (catch Exception e
-                         (println e)
+                         (locking lock
+                           (println e))
                          false)
                        (finally
                          (shutdown peer-1)
@@ -158,16 +159,69 @@
                                  (coll? @(:via.subs/outbound-subs context))
                                  (empty? @(:via.subs/outbound-subs context))))))
                        (catch Exception e
-                         (println e)
+                         (locking lock
+                           (println e))
                          (shutdown peer-2)
                          false)
                        (finally
                          (shutdown peer-1))))))
 
-(defspec expose-api-prevents-access
-  25
+(defspec export-api-prevents-event-access
+  50
   (prop/for-all [value gen/any]
-                (do true)))
+                (let [event-id (str (gensym) "/event")
+                      peer-1 (peer)
+                      peer-2 (peer)]
+                  (se/reg-event
+                   event-id
+                   (fn [_ [_ value :as event]]
+                     {:via/reply {:status 200
+                                  :body value}}))
+                  (try (= {:error {:status 400
+                                   :body {:error :via.endpoint/unknown-event}}}
+                          (try
+                            @(vc/dispatch
+                              (:endpoint peer-2)
+                              (connect peer-2 peer-1)
+                              [event-id value])
+                            (catch Exception e
+                              (ex-data e))))
+                       (catch Exception e
+                         (locking lock
+                           (println e))
+                         false)
+                       (finally
+                         (shutdown peer-1)
+                         (shutdown peer-2))))))
+
+(defspec export-api-prevents-sub-access
+  5
+  (prop/for-all [value gen/any]
+                (let [sub-id (str (gensym) "/sub")
+                      peer-1 (peer)
+                      result (promise)
+                      peer-2 (peer {:event-listeners {:default (fn [[event-id & _ :as event]]
+                                                                 (when (= :via.subs.subscribe/failure event-id)
+                                                                   (deliver result (update
+                                                                                    (:reply (second event))
+                                                                                    :body #(select-keys % [:status :error])))))}})]
+                  (ss/reg-sub sub-id (fn [_] ::unauthorized))
+                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])]
+                         (add-watch sub ::watch (fn [_ _ _ _]))
+                         (Thread/sleep 1000)
+                         (remove-watch sub ::watch)
+                         (if (realized? result)
+                           (= @result {:status 400
+                                       :body {:status :error
+                                              :error :invalid-subscription}})
+                           false))
+                       (catch Exception e
+                         (locking lock
+                           (println e))
+                         false)
+                       (finally
+                         (shutdown peer-1)
+                         (shutdown peer-2))))))
 
 (defspec sub-reconnect-works
   25

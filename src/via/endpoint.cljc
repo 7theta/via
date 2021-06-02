@@ -236,6 +236,10 @@
   [endpoint sub-id]
   (swap! (adapter/exports (endpoint)) update :subs conj sub-id))
 
+(defn unexport-sub
+  [endpoint sub-id]
+  (swap! (adapter/exports (endpoint)) update :subs disj sub-id))
+
 (defn sub?
   [endpoint sub-id]
   (boolean
@@ -247,6 +251,10 @@
 (defn export-event
   [endpoint event-id]
   (swap! (adapter/exports (endpoint)) update :events conj event-id))
+
+(defn unexport-event
+  [endpoint event-id]
+  (swap! (adapter/exports (endpoint)) update :events disj event-id))
 
 (defn event?
   [endpoint event-id]

@@ -75,13 +75,15 @@
   ([endpoint peer-id [query-id & _ :as query] default]
    (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-outbound/timer)]
         :cljs [identity])
-    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
+    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
+          [local-query-id & _ :as local-query] (into [[peer-id query-id]] (rest query))]
       (locking subscription-lock
-        (when (not (ss/sub? query-id))
+        (when (not (ss/sub? local-query-id))
           (ss/reg-sub
-           query-id
+           local-query-id
            (fn [query-v]
-             (let [signal (sig/signal default)
+             (let [query-v (into [query-id] (rest query-v))
+                   signal (sig/signal default)
                    reply-handler (fn [event-key]
                                    (fn [& args]
                                      (via/handle-event endpoint event-key
@@ -112,7 +114,7 @@
                signal))
            (fn [signal _] @signal))
           true))
-      (ss/subscribe query)))))
+      (ss/subscribe local-query)))))
 
 (defn dispose
   [endpoint peer-id query]
