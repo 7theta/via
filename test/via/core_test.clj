@@ -99,7 +99,7 @@
 ;;; Tests
 
 (defspec send-directly-to-peer
-  50
+  20
   (prop/for-all [value gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
                       peer-1 (peer {:exports {:events #{event-id}}})
@@ -122,7 +122,7 @@
                          (shutdown peer-2))))))
 
 (defspec sub-updates-on-change
-  50
+  20
   (prop/for-all [value (gen/sized (fn [size] (gen/vector gen/any-printable-equatable (max size 1))))]
                 (let [sub-id (str (gensym) "/sub")
                       peer-1 (peer {:exports {:subs #{sub-id}}})
@@ -148,7 +148,7 @@
                          (shutdown peer-2))))))
 
 (defspec subs-cleanup-properly
-  50
+  20
   (prop/for-all [value gen/any-printable-equatable]
                 (let [sub-id (str (gensym) "/sub")
                       peer-1-promise (promise)
@@ -183,7 +183,7 @@
                          (shutdown peer-1))))))
 
 (defspec export-api-prevents-event-access
-  50
+  20
   (prop/for-all [value gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
                       peer-1 (peer)
@@ -193,7 +193,7 @@
                    (fn [_ [_ value :as event]]
                      {:via/reply {:status 200
                                   :body value}}))
-                  (try (= {:error {:headers {:status 400}
+                  (try (= {:error {:status 400
                                    :type :reply
                                    :body {:error :via.endpoint/unknown-event}}}
                           (-> (try
@@ -203,7 +203,7 @@
                                   [event-id value])
                                 (catch Exception e
                                   (ex-data e)))
-                              (update-in [:error :headers] #(select-keys % [:status]))))
+                              (update :error dissoc :headers)))
                        (catch Exception e
                          (locking lock
                            (println e))
@@ -213,7 +213,7 @@
                          (shutdown peer-2))))))
 
 (defspec export-api-prevents-sub-access
-  50
+  20
   (prop/for-all [value gen/any-printable-equatable]
                 (let [sub-id (str (gensym) "/sub")
                       peer-1 (peer)
@@ -238,7 +238,7 @@
                          (shutdown peer-2))))))
 
 (defspec peer-routing-works
-  25
+  20
   (prop/for-all [value gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
                       effect-id (str (gensym) "/effect")
@@ -287,7 +287,7 @@
                       (shutdown c))))))
 
 (defspec headers-survive-transmission
-  50
+  20
   (prop/for-all [headers (gen/map gen/keyword gen/string)
                  message gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
@@ -317,7 +317,7 @@
                          (shutdown peer-2))))))
 
 (defspec sub-reconnect-works
-  50
+  20
   (prop/for-all [[value1 value2] (gen/vector-distinct gen/any-printable-equatable {:num-elements 2})]
                 (let [sub-id (str (gensym) "/sub")
                       disconnected-promise (promise)

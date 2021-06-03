@@ -110,7 +110,7 @@
 
 (defn send
   "Asynchronously sends `message` to the client for `peer-id`"
-  [endpoint peer-id message & {:keys [type timeout headers
+  [endpoint peer-id message & {:keys [type timeout headers params
                                       on-success
                                       on-failure
                                       on-timeout timeout]
@@ -128,7 +128,8 @@
        (let [message (merge (when type {:type type})
                             (when message {:body message})
                             (when (map? headers)
-                              {:headers headers}))]
+                              {:headers headers})
+                            params)]
          (if (or on-success on-failure on-timeout)
            (let [request-id (uuid)
                  message (assoc-in message [:headers :request-id] request-id)]
@@ -343,8 +344,8 @@
   [endpoint peer-id request-id {:keys [status body]}]
   (send endpoint peer-id body
         :type :reply
-        :headers {:status status
-                  :request-id request-id}))
+        :params {:status status}
+        :headers {:request-id request-id}))
 
 ;;; Effect Handlers
 
@@ -459,7 +460,7 @@
   (let [request-id (-> reply :headers :request-id)]
     (if-let [request (and request-id (get @(adapter/requests (endpoint)) request-id))]
       (do ((fsafe timer/cancel) (:timer request))
-          (when-let [f (get {200 (:on-success request)} (-> reply :headers :status) (:on-failure request))]
+          (when-let [f (get {200 (:on-success request)} (:status reply) (:on-failure request))]
             (try (f reply)
                  #?(:clj (catch Exception e
                            (log/error "Unhandled exception in reply handler" e))
