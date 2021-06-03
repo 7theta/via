@@ -39,7 +39,7 @@
 (defonce endpoints (atom #{}))
 
 (declare encode-message decode-message
-         connect disconnect
+         connect disconnect cancel-reconnect-task
          handle-connect handle-disconnect
          handle-message handle-event
          normalize-namespace
@@ -181,7 +181,10 @@
   ([endpoint peer-id]
    (disconnect endpoint peer-id false))
   ([endpoint peer-id reconnect]
-   (adapter/disconnect (endpoint) peer-id reconnect)))
+   (swap! (adapter/peers (endpoint)) assoc-in [peer-id :reconnect] reconnect)
+   (adapter/disconnect (endpoint) peer-id)
+   (when (not reconnect)
+     (cancel-reconnect-task endpoint peer-id))))
 
 (defn first-peer
   [endpoint]

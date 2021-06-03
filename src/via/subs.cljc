@@ -92,6 +92,11 @@
                                                               {:peer-id peer-id
                                                                :query-v query-v
                                                                :default default}))))
+                   reset-sub! (fn []
+                                (swap! outbound-subs update (sub-key peer-id query-v)
+                                       assoc :state (atom {:window []
+                                                           :sn 0
+                                                           :updated nil})))
                    remote-subscribe (fn []
                                       (via/send endpoint peer-id
                                                 [:via.subs/subscribe
@@ -110,6 +115,7 @@
                          :signal signal
                          :peer-id peer-id
                          :query-v query-v
+                         :reset-sub! reset-sub!
                          :remote-subscribe remote-subscribe}))
                signal))
            (fn [signal _] @signal))
@@ -297,6 +303,7 @@
 
 (defn- reconnect-subs
   [endpoint reconnected-peer-id]
-  (doseq [{:keys [remote-subscribe query-v peer-id]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
+  (doseq [{:keys [remote-subscribe reset-sub! query-v peer-id]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
     (when (= peer-id reconnected-peer-id)
+      (reset-sub!)
       (remote-subscribe))))

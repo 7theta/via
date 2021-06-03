@@ -57,26 +57,28 @@
 
 (defn peer
   ([] (peer nil))
-  ([endpoint-config]
-   (loop [attempts 3]
-     (let [result (try (let [port (allocate-free-port!)
-                             peer (ig/init
-                                   {:via/endpoint endpoint-config
-                                    :via/subs {:endpoint (ig/ref :via/endpoint)}
-                                    :via/http-server {:ring-handler (ig/ref :via.core-test/ring-handler)
-                                                      :http-port port}
-                                    :via.core-test/ring-handler {:via-handler (ig/ref :via/endpoint)}})]
-                         {:peer peer
-                          :endpoint (:via/endpoint peer)
-                          :shutdown #(ig/halt! peer)
-                          :address (str "ws://localhost:" port default-via-endpoint)})
-                       (catch Exception e
-                         (if (zero? attempts)
-                           (throw e)
-                           ::recur)))]
-       (if (not= result ::recur)
-         result
-         (recur (dec attempts)))))))
+  ([{:keys [port] :as endpoint-config}]
+   (let [endpoint-config (dissoc endpoint-config :port)]
+     (loop [attempts 3]
+       (let [result (try (let [port (or port (allocate-free-port!))
+                               peer (ig/init
+                                     {:via/endpoint endpoint-config
+                                      :via/subs {:endpoint (ig/ref :via/endpoint)}
+                                      :via/http-server {:ring-handler (ig/ref :via.core-test/ring-handler)
+                                                        :http-port port}
+                                      :via.core-test/ring-handler {:via-handler (ig/ref :via/endpoint)}})]
+                           {:peer peer
+                            :port port
+                            :endpoint (:via/endpoint peer)
+                            :shutdown #(ig/halt! peer)
+                            :address (str "ws://localhost:" port default-via-endpoint)})
+                         (catch Exception e
+                           (if (zero? attempts)
+                             (throw e)
+                             ::recur)))]
+         (if (not= result ::recur)
+           result
+           (recur (dec attempts))))))))
 
 (defn shutdown
   [{:keys [shutdown] :as peer}]
@@ -134,21 +136,11 @@
                                                     (deliver (nth promises i) value))))
                          (doseq [[index value] (map-indexed vector value)]
                            (sig/alter! value-signal (constantly {:i index :value value})))
-                         (let [result (wait-for (last promises))
-                               passed? (= result (last value))]
+                         (let [result (wait-for (last promises))]
                            (remove-watch sub ::watch)
-                           (when (not passed?)
-                             (locking lock
-                               (clojure.pprint/pprint
-                                {:test :subs-update-on-change
-                                 :value value
-                                 :result result})))
-                           passed?))
+                           (= result (last value))))
                        (catch Exception e
                          (locking lock
-                           (clojure.pprint/pprint
-                            {:value value
-                             :promises promises})
                            (println e))
                          false)
                        (finally
@@ -245,11 +237,6 @@
                          (shutdown peer-1)
                          (shutdown peer-2))))))
 
-(defspec sub-reconnect-works
-  50
-  (prop/for-all [value gen/any-printable-equatable]
-                (do true)))
-
 (defspec peer-routing-works
   25
   (prop/for-all [value gen/any-printable-equatable]
@@ -328,11 +315,45 @@
                        (finally
                          (shutdown peer-1)
                          (shutdown peer-2))))))
-;;
-;; VIA_AUTH
-;; - test that id password authentication prevents access to resources
-;;
-;; VIA_SCHEMA
-;; - test that unknown keys are stripped out
-;; - test bad schemas don't pass
-;; - test that good schemas do pass
+
+(defspec sub-reconnect-works
+  50
+  (prop/for-all [[value1 value2] (gen/vector-distinct gen/any-printable-equatable {:num-elements 2})]
+                (let [sub-id (str (gensym) "/sub")
+                      disconnected-promise (promise)
+                      peer-1 (peer {:context {:id 1}
+                                    :exports {:subs #{sub-id}}})
+                      peer-2 (peer {:event-listeners {:via.endpoint.peer/disconnected (fn [_] (deliver disconnected-promise true))}
+                                    :context {:id 2}})
+                      value-signal (sig/signal ::init)
+                      value-promise-1 (promise)
+                      value-promise-2 (promise)
+                      current-promise (atom value-promise-1)]
+                  (ss/reg-sub sub-id (fn [_] @value-signal))
+                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])]
+                         (add-watch sub ::watch (fn [_ _ _ value]
+                                                  (when-let [p @current-promise]
+                                                    (deliver p value))))
+                         (sig/alter! value-signal (constantly value1))
+                         (wait-for value-promise-1)
+                         (shutdown peer-1)
+                         (wait-for disconnected-promise)
+                         (reset! current-promise value-promise-2)
+                         (let [peer-1b (peer {:port (:port peer-1)
+                                              :exports {:subs #{sub-id}}
+                                              :context {:id "1b"}
+                                              :event-listeners {:via.endpoint.peer/connected (fn [_] (sig/alter! value-signal (constantly value2)))}})]
+                           (try (let [result (wait-for value-promise-2)]
+                                  (remove-watch sub ::watch)
+                                  (= result value2))
+                                (catch Exception e
+                                  (shutdown peer-1b)
+                                  (throw e))))
+                         true)
+                       (catch Exception e
+                         (locking lock
+                           (println e))
+                         false)
+                       (finally
+                         (shutdown peer-1)
+                         (shutdown peer-2))))))

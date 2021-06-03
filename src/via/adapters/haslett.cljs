@@ -22,8 +22,8 @@
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
                      (send* endpoint peer-id message))
-                   (disconnect [endpoint peer-id reconnect]
-                     (disconnect* endpoint peer-id reconnect))
+                   (disconnect [endpoint peer-id]
+                     (disconnect* endpoint peer-id))
                    (connect [endpoint address]
                      (connect* endpoint address))
                    (shutdown [endpoint]
@@ -63,8 +63,7 @@
            (js/console.error "Error occurred in via.adapters.haslett/connect*" e)))))))
 
 (defn- disconnect*
-  [endpoint peer-id reconnect]
-  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
+  [endpoint peer-id]
   (ws/close (get-in @(adapter/peers endpoint) [peer-id :connection])))
 
 (defn- handle-connection
@@ -74,7 +73,6 @@
     (when (not peer-id)
       (throw (ex-info "No peer-id on request"
                       {:request request})))
-    (swap! (adapter/peers endpoint) update peer-id dissoc :reconnect)
     (async/go
       (try (loop []
              (async/alt!

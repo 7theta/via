@@ -34,8 +34,8 @@
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
                      (send* endpoint peer-id message))
-                   (disconnect [endpoint peer-id reconnect]
-                     (disconnect* endpoint peer-id reconnect))
+                   (disconnect [endpoint peer-id]
+                     (disconnect* endpoint peer-id))
                    (connect [endpoint address]
                      (connect* endpoint address))
                    (shutdown [endpoint]
@@ -62,9 +62,8 @@
          nil)))
 
 (defn- disconnect*
-  [endpoint peer-id reconnect]
+  [endpoint peer-id]
   (when-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
-    (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
     (.close connection)))
 
 (defn- handle-request
@@ -84,7 +83,6 @@
   [endpoint [_ {:keys [connection request]}]]
   (let [{:keys [peer-id]} request]
     (when (not peer-id) (throw (ex-info "No peer-id on request" {:request request})))
-    (swap! (adapter/peers endpoint) update peer-id dissoc :reconnect)
     (d/loop []
       (d/chain (s/take! connection ::drained)
                (fn [msg]
