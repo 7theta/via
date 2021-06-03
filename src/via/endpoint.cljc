@@ -489,7 +489,8 @@
       :else (se/dispatch {:endpoint endpoint
                           :request request
                           :message message
-                          :event event} event))))
+                          :event event
+                          :peer (get @(adapter/peers (endpoint)) (:peer-id request))} event))))
 
 (defn- handle-message
   [endpoint request message]
