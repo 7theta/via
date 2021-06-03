@@ -195,6 +195,8 @@
        (let [peer-id (:peer-id request)
              sequence-number (atom (long 0))
              watch-key (str ":via-" query-v "(" peer-id ")")
+             initial-value @signal
+             wait-for-initial (promise)
              send-value! #(try (via/send endpoint peer-id
                                          (conj (vec callback)
                                                {:query-v query-v
@@ -211,12 +213,14 @@
                 {:signal signal
                  :watch-key watch-key})
          (add-watch signal watch-key (fn [_ _ old new]
+                                       @wait-for-initial
                                        (when (not= old new)
                                          (send-value! (if (or (and (map? new) (map? old))
                                                               (and (vector? new) (vector? old)))
                                                         [:p (diff old new)]
                                                         [:v new])))))
-         (send-value! [:v @signal]))
+         (send-value! [:v initial-value])
+         (deliver wait-for-initial true))
        (do (via/handle-event endpoint :via.subs/unknown-sub
                              {:query-v query-v
                               :callback callback})

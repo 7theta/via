@@ -5,15 +5,20 @@
             [via.defaults :refer [default-via-endpoint]]
             [via.core :as vc]
 
+            [clojure.data :refer [diff]]
+
             [signum.subs :as ss]
             [signum.signal :as sig]
             [signum.events :as se]
+            [signum.fx :as sfx]
 
             [integrant.core :as ig]
 
             [compojure.core :as compojure :refer [GET POST]]
             [compojure.route :as route]
             [ring.middleware.defaults :as ring-defaults]
+
+            [utilis.timer :as timer]
 
             [clojure.test :as t]
             [clojure.test.check :as tc]
@@ -81,11 +86,19 @@
   [from to]
   (via/connect (:endpoint from) (:address to)))
 
+(defn wait-for
+  ([p] (wait-for p 5000))
+  ([p timeout-ms]
+   (let [result (deref p timeout-ms ::timed-out)]
+     (if (= result ::timed-out)
+       (throw (ex-info "Timed out waiting for promise" {}))
+       result))))
+
 ;;; Tests
 
 (defspec send-directly-to-peer
-  25
-  (prop/for-all [value gen/any]
+  50
+  (prop/for-all [value gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
                       peer-1 (peer {:exports {:events #{event-id}}})
                       peer-2 (peer)]
@@ -107,24 +120,35 @@
                          (shutdown peer-2))))))
 
 (defspec sub-updates-on-change
-  10
-  (prop/for-all [value (gen/vector gen/any)]
+  50
+  (prop/for-all [value (gen/sized (fn [size] (gen/vector gen/any-printable-equatable (max size 1))))]
                 (let [sub-id (str (gensym) "/sub")
                       peer-1 (peer {:exports {:subs #{sub-id}}})
                       peer-2 (peer)
-                      value-signal (sig/signal nil)]
+                      value-signal (sig/signal ::init)
+                      promises (mapv (fn [_] (promise)) value)]
                   (ss/reg-sub sub-id (fn [_] @value-signal))
-                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])
-                             result (atom nil)]
-                         (add-watch sub ::watch (fn [_ _ _ value]
-                                                  (reset! result value)))
-                         (doseq [value value]
-                           (sig/alter! value-signal (constantly value)))
-                         (Thread/sleep 500)
-                         (remove-watch sub ::watch)
-                         (= @result (last value)))
+                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])]
+                         (add-watch sub ::watch (fn [_ _ _ {:keys [value i]}]
+                                                  (when (number? i)
+                                                    (deliver (nth promises i) value))))
+                         (doseq [[index value] (map-indexed vector value)]
+                           (sig/alter! value-signal (constantly {:i index :value value})))
+                         (let [result (wait-for (last promises))
+                               passed? (= result (last value))]
+                           (remove-watch sub ::watch)
+                           (when (not passed?)
+                             (locking lock
+                               (clojure.pprint/pprint
+                                {:test :subs-update-on-change
+                                 :value value
+                                 :result result})))
+                           passed?))
                        (catch Exception e
                          (locking lock
+                           (clojure.pprint/pprint
+                            {:value value
+                             :promises promises})
                            (println e))
                          false)
                        (finally
@@ -132,23 +156,23 @@
                          (shutdown peer-2))))))
 
 (defspec subs-cleanup-properly
-  10
-  (prop/for-all [value gen/any]
+  50
+  (prop/for-all [value gen/any-printable-equatable]
                 (let [sub-id (str (gensym) "/sub")
-                      peer-1 (peer {:exports {:subs #{sub-id}}})
-                      peer-2 (peer)
+                      peer-1-promise (promise)
+                      peer-1 (peer {:exports {:subs #{sub-id}}
+                                    :event-listeners {:via.endpoint.peer/removed (fn [_] (deliver peer-1-promise true))}})
+                      peer-2-promise (promise)
+                      peer-2 (peer {:event-listeners {:via.endpoint.peer/removed (fn [_] (deliver peer-2-promise true))}})
                       value-signal (sig/signal nil)]
                   (ss/reg-sub sub-id (fn [_] @value-signal))
-                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])
-                             result (atom nil)]
-                         (add-watch sub ::watch (fn [_ _ _ value]
-                                                  (reset! result value)))
+                  (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])]
+                         (add-watch sub ::watch (fn [_ _ _ value]))
                          (sig/alter! value-signal (constantly value))
-                         (Thread/sleep 500)
                          (remove-watch sub ::watch)
-                         (Thread/sleep 500)
                          (shutdown peer-2)
-                         (Thread/sleep 500)
+                         (wait-for peer-1-promise)
+                         (wait-for peer-2-promise)
                          (let [{:keys [peers context]} (adapter/opts ((:endpoint peer-1)))
                                context @context]
                            (boolean
@@ -168,7 +192,7 @@
 
 (defspec export-api-prevents-event-access
   50
-  (prop/for-all [value gen/any]
+  (prop/for-all [value gen/any-printable-equatable]
                 (let [event-id (str (gensym) "/event")
                       peer-1 (peer)
                       peer-2 (peer)]
@@ -177,15 +201,17 @@
                    (fn [_ [_ value :as event]]
                      {:via/reply {:status 200
                                   :body value}}))
-                  (try (= {:error {:status 400
+                  (try (= {:error {:headers {:status 400}
+                                   :type :reply
                                    :body {:error :via.endpoint/unknown-event}}}
-                          (try
-                            @(vc/dispatch
-                              (:endpoint peer-2)
-                              (connect peer-2 peer-1)
-                              [event-id value])
-                            (catch Exception e
-                              (ex-data e))))
+                          (-> (try
+                                @(vc/dispatch
+                                  (:endpoint peer-2)
+                                  (connect peer-2 peer-1)
+                                  [event-id value])
+                                (catch Exception e
+                                  (ex-data e)))
+                              (update-in [:error :headers] #(select-keys % [:status]))))
                        (catch Exception e
                          (locking lock
                            (println e))
@@ -195,26 +221,22 @@
                          (shutdown peer-2))))))
 
 (defspec export-api-prevents-sub-access
-  5
-  (prop/for-all [value gen/any]
+  50
+  (prop/for-all [value gen/any-printable-equatable]
                 (let [sub-id (str (gensym) "/sub")
                       peer-1 (peer)
                       result (promise)
                       peer-2 (peer {:event-listeners {:default (fn [[event-id & _ :as event]]
                                                                  (when (= :via.subs.subscribe/failure event-id)
-                                                                   (deliver result (update
-                                                                                    (:reply (second event))
-                                                                                    :body #(select-keys % [:status :error])))))}})]
+                                                                   (deliver result (:reply (second event)))))}})]
                   (ss/reg-sub sub-id (fn [_] ::unauthorized))
                   (try (let [sub (vc/subscribe (:endpoint peer-2) (connect peer-2 peer-1) [sub-id])]
                          (add-watch sub ::watch (fn [_ _ _ _]))
-                         (Thread/sleep 1000)
                          (remove-watch sub ::watch)
-                         (if (realized? result)
-                           (= @result {:status 400
-                                       :body {:status :error
-                                              :error :invalid-subscription}})
-                           false))
+                         (= (:body (wait-for result))
+                            {:status :error
+                             :error :invalid-subscription
+                             :query-v [sub-id]}))
                        (catch Exception e
                          (locking lock
                            (println e))
@@ -224,15 +246,88 @@
                          (shutdown peer-2))))))
 
 (defspec sub-reconnect-works
-  25
-  (prop/for-all [value gen/any]
+  50
+  (prop/for-all [value gen/any-printable-equatable]
                 (do true)))
 
-;; route a message through multiple peers
 (defspec peer-routing-works
   25
-  (prop/for-all [value gen/any]
-                (do true)))
+  (prop/for-all [value gen/any-printable-equatable]
+                (let [event-id (str (gensym) "/event")
+                      effect-id (str (gensym) "/effect")
+                      a (peer {:exports {:events #{event-id}}
+                               :context {:id :a}})
+                      b (peer {:exports {:events #{event-id}}
+                               :context {:id :b}})
+                      c (peer {:exports {:events #{event-id}}
+                               :context {:id :c}})
+                      a->b-peer-id (connect a b)
+                      b->c-peer-id (connect b c)
+                      c->a-peer-id (connect c a)
+                      result (promise)]
+                  (sfx/reg-fx
+                   effect-id
+                   (fn [{:keys [endpoint]} message]
+                     (deliver result {:endpoint-id (:id @(adapter/context (endpoint)))
+                                      :message message})))
+                  (se/reg-event
+                   event-id
+                   (fn [{:keys [message]} event]
+                     (let [{:keys [headers]} message
+                           {:keys [hops]} headers]
+                       (if-let [peer-id (first hops)]
+                         {:via/send {:peer-id peer-id
+                                     :message event
+                                     :headers (update headers :hops next)}}
+                         {effect-id message}))))
+                  (via/send (:endpoint a)
+                            a->b-peer-id
+                            [event-id value]
+                            :headers {:hops [b->c-peer-id
+                                             c->a-peer-id]})
+                  (try
+                    (let [{:keys [endpoint-id message]} (wait-for result)]
+                      (boolean
+                       (and (= endpoint-id :a)
+                            (= value (second (:body message))))))
+                    (catch Exception e
+                      (locking lock
+                        (println e))
+                      false)
+                    (finally
+                      (shutdown a)
+                      (shutdown b)
+                      (shutdown c))))))
+
+(defspec headers-survive-transmission
+  50
+  (prop/for-all [headers (gen/map gen/keyword gen/string)
+                 message gen/any-printable-equatable]
+                (let [event-id (str (gensym) "/event")
+                      effect-id (str (gensym) "/effect")
+                      peer-1 (peer {:exports {:events #{event-id}}})
+                      peer-2 (peer)
+                      result (promise)]
+                  (sfx/reg-fx
+                   effect-id
+                   (fn [_ message]
+                     (deliver result message)))
+                  (se/reg-event
+                   event-id
+                   (fn [{:keys [message]} _]
+                     {effect-id message}))
+                  (via/send (:endpoint peer-2)
+                            (connect peer-2 peer-1)
+                            [event-id message]
+                            :headers headers)
+                  (try (= (:headers (wait-for result)) headers)
+                       (catch Exception e
+                         (locking lock
+                           (println e))
+                         false)
+                       (finally
+                         (shutdown peer-1)
+                         (shutdown peer-2))))))
 ;;
 ;; VIA_AUTH
 ;; - test that id password authentication prevents access to resources

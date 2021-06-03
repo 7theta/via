@@ -55,7 +55,8 @@
              heartbeat-interval
              heartbeat-timeout
              heartbeat-enabled
-             heartbeat-fail-threshold]
+             heartbeat-fail-threshold
+             context]
       :or {adapter #?(:clj aleph/websocket-adapter
                       :cljs haslett/websocket-adapter)
            heartbeat-interval defaults/heartbeat-interval
@@ -77,7 +78,7 @@
                                                  :namespaces (set namespaces)})
                                  :peers (atom {})
                                  :requests (atom {})
-                                 :context (atom {})
+                                 :context (atom (into {} context))
                                  :handle-message (fn [& args] (apply handle-message args))
                                  :handle-disconnect (fn [& args] (apply handle-disconnect args))
                                  :handle-connect (fn [& args] (apply handle-connect args))
@@ -109,7 +110,7 @@
 
 (defn send
   "Asynchronously sends `message` to the client for `peer-id`"
-  [endpoint peer-id message & {:keys [type timeout params
+  [endpoint peer-id message & {:keys [type timeout headers
                                       on-success
                                       on-failure
                                       on-timeout timeout]
@@ -121,17 +122,16 @@
          (throw (ex-info "No peer-id provided" {:message message
                                                 :peer-id peer-id
                                                 :type type
-                                                :params params
+                                                :headers headers
                                                 :timeout timeout})))
        #?(:clj (meters/mark! (adapter/static-metric (endpoint) :via.endpoint.throughput.messages-sent/meter)))
        (let [message (merge (when type {:type type})
                             (when message {:body message})
-                            params)]
+                            (when (map? headers)
+                              {:headers headers}))]
          (if (or on-success on-failure on-timeout)
            (let [request-id (uuid)
-                 message (merge message
-                                {:request-id request-id}
-                                (when timeout {:timeout timeout}))]
+                 message (assoc-in message [:headers :request-id] request-id)]
              (swap! (adapter/requests (endpoint)) assoc request-id
                     {:on-success on-success
                      :on-failure on-failure
@@ -152,7 +152,7 @@
            (adapter/send (endpoint) peer-id ((adapter/encode (endpoint)) message)))))))
 
 (defn send-to-tag
-  [endpoint tag message & {:keys [type timeout params
+  [endpoint tag message & {:keys [type timeout headers
                                   on-success
                                   on-failure
                                   on-timeout timeout]
@@ -165,7 +165,7 @@
     (send endpoint peer-id message
           :type type
           :timeout timeout
-          :params params
+          :headers headers
           :on-success on-success
           :on-failure on-failure
           :on-timeout on-timeout
@@ -340,8 +340,8 @@
   [endpoint peer-id request-id {:keys [status body]}]
   (send endpoint peer-id body
         :type :reply
-        :params {:status status
-                 :request-id request-id}))
+        :headers {:status status
+                  :request-id request-id}))
 
 ;;; Effect Handlers
 
@@ -367,17 +367,23 @@
 
 (sfx/reg-fx
  :via/reply
- (fn [{:keys [endpoint request event]} {:keys [status body] :as message}]
+ (fn [{:keys [endpoint request event message]} {:keys [status body] :as reply}]
    (when (not status)
      (throw (ex-info "A status must be provided in a :via/reply"
                      {:eg {:status 200}})))
-   (if-let [request-id (:request-id request)]
-     (send-reply endpoint (:peer-id request) request-id message)
+   (if-let [request-id (-> message :headers :request-id)]
+     (send-reply endpoint (:peer-id request) request-id reply)
      (handle-event endpoint :via.endpoint.outbound-reply/unhandled
                    {:reply (merge {:type :reply
                                    :reply-to event
                                    :status status}
                                   (when body {:body body}))}))))
+
+(sfx/reg-fx
+ :via/send
+ (fn [{:keys [endpoint request]} {:keys [peer-id message headers]}]
+   (send endpoint peer-id message
+         :headers headers)))
 
 (sfx/reg-fx
  :via.session-context/replace
@@ -447,20 +453,21 @@
 
 (defn- handle-reply
   [endpoint reply]
-  (if-let [request (get @(adapter/requests (endpoint)) (:request-id reply))]
-    (do ((fsafe timer/cancel) (:timer request))
-        (let [f (get {200 (:on-success request)} (:status reply) (:on-failure request))]
-          (try ((fsafe f) (select-keys reply [:status :body]))
-               #?(:clj (catch Exception e
-                         (log/error "Unhandled exception in reply handler" e))
-                  :cljs (catch js/Error e
-                          (js/console.error "Unhandled exception in reply handler" e))))
-          (swap! (adapter/requests (endpoint)) dissoc (:request-id reply))))
-    (handle-event endpoint :via.endpoint.inbound-reply/unhandled {:reply reply})))
+  (let [request-id (-> reply :headers :request-id)]
+    (if-let [request (and request-id (get @(adapter/requests (endpoint)) request-id))]
+      (do ((fsafe timer/cancel) (:timer request))
+          (when-let [f (get {200 (:on-success request)} (-> reply :headers :status) (:on-failure request))]
+            (try (f reply)
+                 #?(:clj (catch Exception e
+                           (log/error "Unhandled exception in reply handler" e))
+                    :cljs (catch js/Error e
+                            (js/console.error "Unhandled exception in reply handler" e)))))
+          (swap! (adapter/requests (endpoint)) dissoc request-id))
+      (handle-event endpoint :via.endpoint.inbound-reply/unhandled {:reply reply}))))
 
 (defn- send-unknown-event-reply
   [endpoint peer-id message]
-  (when-let [request-id (:request-id message)]
+  (when-let [request-id (-> message :headers :request-id)]
     (send-reply endpoint peer-id
                 request-id {:status 400
                             :body {:error :via.endpoint/unknown-event}})))
@@ -477,6 +484,7 @@
 
       :else (se/dispatch {:endpoint endpoint
                           :request request
+                          :message message
                           :event event} event))))
 
 (defn- handle-message
@@ -484,9 +492,7 @@
   (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.handle-message/timer)]
        :cljs [identity])
    #?(:clj (meters/mark! (adapter/static-metric (endpoint) :via.endpoint.throughput.messages-received/meter)))
-   (let [message ((adapter/decode (endpoint)) message)
-         request (cond-> request
-                   (:request-id message) (assoc :request-id (:request-id message)))]
+   (let [message ((adapter/decode (endpoint)) message)]
      (condp = (:type message)
        :event (handle-remote-event endpoint request message)
        :reply (handle-reply endpoint message)
