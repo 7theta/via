@@ -75,13 +75,15 @@
   ([endpoint peer-id [query-id & _ :as query] default]
    (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-outbound/timer)]
         :cljs [identity])
-    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))]
+    (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
+          [local-query-id & _ :as local-query] (into [[peer-id query-id]] (rest query))]
       (locking subscription-lock
-        (when (not (ss/sub? query-id))
+        (when (not (ss/sub? local-query-id))
           (ss/reg-sub
-           query-id
+           local-query-id
            (fn [query-v]
-             (let [signal (sig/signal default)
+             (let [query-v (into [query-id] (rest query-v))
+                   signal (sig/signal default)
                    reply-handler (fn [event-key]
                                    (fn [& args]
                                      (via/handle-event endpoint event-key
@@ -90,6 +92,11 @@
                                                               {:peer-id peer-id
                                                                :query-v query-v
                                                                :default default}))))
+                   reset-sub! (fn []
+                                (swap! outbound-subs update (sub-key peer-id query-v)
+                                       assoc :state (atom {:window []
+                                                           :sn 0
+                                                           :updated nil})))
                    remote-subscribe (fn []
                                       (via/send endpoint peer-id
                                                 [:via.subs/subscribe
@@ -108,11 +115,12 @@
                          :signal signal
                          :peer-id peer-id
                          :query-v query-v
+                         :reset-sub! reset-sub!
                          :remote-subscribe remote-subscribe}))
                signal))
            (fn [signal _] @signal))
           true))
-      (ss/subscribe query)))))
+      (ss/subscribe local-query)))))
 
 (defn dispose
   [endpoint peer-id query]
@@ -193,6 +201,8 @@
        (let [peer-id (:peer-id request)
              sequence-number (atom (long 0))
              watch-key (str ":via-" query-v "(" peer-id ")")
+             initial-value @signal
+             wait-for-initial (promise)
              send-value! #(try (via/send endpoint peer-id
                                          (conj (vec callback)
                                                {:query-v query-v
@@ -209,12 +219,14 @@
                 {:signal signal
                  :watch-key watch-key})
          (add-watch signal watch-key (fn [_ _ old new]
+                                       @wait-for-initial
                                        (when (not= old new)
                                          (send-value! (if (or (and (map? new) (map? old))
                                                               (and (vector? new) (vector? old)))
                                                         [:p (diff old new)]
                                                         [:v new])))))
-         (send-value! [:v @signal]))
+         (send-value! [:v initial-value])
+         (deliver wait-for-initial true))
        (do (via/handle-event endpoint :via.subs/unknown-sub
                              {:query-v query-v
                               :callback callback})
@@ -291,6 +303,7 @@
 
 (defn- reconnect-subs
   [endpoint reconnected-peer-id]
-  (doseq [{:keys [remote-subscribe query-v peer-id]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
+  (doseq [{:keys [remote-subscribe reset-sub! query-v peer-id]} (vals @(::outbound-subs @(adapter/context (endpoint))))]
     (when (= peer-id reconnected-peer-id)
+      (reset-sub!)
       (remote-subscribe))))

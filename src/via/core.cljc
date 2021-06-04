@@ -23,7 +23,7 @@
                       :peer-id peer-id
                       :query query})))
    #?(:cljs (rf/subscribe endpoint peer-id query default)
-      :clj (vs/subscribe endpoint peer-id query default))))
+      :clj (vs/subscribe endpoint peer-id query default ))))
 
 (defn dispatch
   "Dispatch `event` to `peer-id` through `endpoint`."

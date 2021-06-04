@@ -34,8 +34,8 @@
                    (opts [endpoint] adapter-opts)
                    (send [endpoint peer-id message]
                      (send* endpoint peer-id message))
-                   (disconnect [endpoint peer-id reconnect]
-                     (disconnect* endpoint peer-id reconnect))
+                   (disconnect [endpoint peer-id]
+                     (disconnect* endpoint peer-id))
                    (connect [endpoint address]
                      (connect* endpoint address))
                    (shutdown [endpoint]
@@ -56,15 +56,15 @@
     (log/warn "Tried to put nil message on channel" {:peer-id peer-id})))
 
 (defn- connect*
-  [endpoint address {:keys [on-success on-failure]}]
+  [endpoint address]
   (try @(http/websocket-client address)
        (catch Exception e
          nil)))
 
 (defn- disconnect*
-  [endpoint peer-id reconnect]
-  (swap! (adapter/peers endpoint) assoc-in [peer-id :reconnect] reconnect)
-  (.close (get-in @(adapter/peers endpoint) [peer-id :connection])))
+  [endpoint peer-id]
+  (when-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
+    (.close connection)))
 
 (defn- handle-request
   [endpoint request & {:keys [websocket-options]}]
@@ -83,7 +83,6 @@
   [endpoint [_ {:keys [connection request]}]]
   (let [{:keys [peer-id]} request]
     (when (not peer-id) (throw (ex-info "No peer-id on request" {:request request})))
-    (swap! (adapter/peers endpoint) update peer-id dissoc :reconnect)
     (d/loop []
       (d/chain (s/take! connection ::drained)
                (fn [msg]
