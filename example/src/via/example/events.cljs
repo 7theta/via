@@ -13,3 +13,13 @@
  :example.dispatch-reply/updated
  (fn [{:keys [db]} [_ value]]
    {:db (assoc db :example/dispatch-reply value)}))
+
+(reg-event-fx
+ :example.peer/connected
+ (fn [{:keys [db]} [_ peer-id]]
+   {:db (update db :peers/connected #(conj (set %) peer-id))}))
+
+(reg-event-fx
+ :example.peer/disconnected
+ (fn [{:keys [db]} [_ peer-id]]
+   {:db (update db :peers/connected #(disj (set %) peer-id))}))

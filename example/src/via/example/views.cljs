@@ -25,11 +25,13 @@
    [:div "Auto Incrementing Counter: " @(subscribe [:api.example/auto-increment-counter])]
    [:div "Counter Multiplied by 5: " @(subscribe [:api.example.auto-increment-counter/multiply 5])]])
 
-(defn reconnect
+(defn connection
   []
-  [:div {:style {:padding 24
-                 :min-width 300}}
-   [:h2 "Reconnect"]])
+  (let [status @(subscribe [:example/connection-status])]
+    [:div {:style {:padding 24
+                   :min-width 300}}
+     [:h2 "Connection"]
+     [:div "Status: " status]]))
 
 (defn ring-routing
   []
@@ -68,10 +70,9 @@
                   :flex-wrap "wrap"}}
     (->> @(subscribe [:api.example/metrics])
          (sort-by (juxt :type :name))
-         (map-indexed (fn [index {:keys [name value type]}]
+         (map-indexed (fn [index {:keys [name key value type]}]
                         [:div {:key (str name "-" index)
-                               :style {:margin-right 24
-                                       :margin-bottom 24
+                               :style {:margin-bottom 24
                                        :min-width 250}}
                          [:h3 {:style {:margin 0}}
                           (str name " (" (clojure.core/name type) ")")]
@@ -83,9 +84,7 @@
                             :meter [historical {:value value
                                                 :tx (fn [value] (str (j/call value :toFixed 2) "/s"))}]
                             [:div (str value)])]]))
-         (doall))]]
-
-  )
+         (doall))]])
 
 (defn main-panel []
   [:div {:style {:padding 24}}
@@ -95,6 +94,6 @@
                   :flex-wrap "wrap"}}
     [dispatch-reply]
     [remote-subs]
-    [reconnect]]
-   [ring-routing]
+    [connection]]
+   #_[ring-routing]
    [metrics]])

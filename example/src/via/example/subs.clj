@@ -32,11 +32,9 @@
    (let [metrics (s/signal nil)
          update-loop (future
                        (loop []
-                         (s/alter! metrics #(try (-> system
-                                                     :via/endpoint
-                                                     telemetry/metrics)
+                         (s/alter! metrics #(try (when-let [endpoint (:via/endpoint system)]
+                                                   (telemetry/metrics endpoint))
                                                  (catch Exception e
-                                                   (println e)
                                                    %)))
                          (Thread/sleep 1000)
                          (recur)))]
