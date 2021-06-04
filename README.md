@@ -12,8 +12,11 @@ The `example` directory has a fully functioning application.
 Check out [via-auth](https://github.com/7theta/via-auth) for
 authentication strategies.
 
+Check out [via-schema](https://github.com/7theta/via-schema) for
+schema validation strategies.
+
 ## Copyright and License
 
-Copyright © 2015-2020 7theta
+Copyright © 2015-2021 7theta
 
 Distributed under the MIT License.
