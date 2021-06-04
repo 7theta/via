@@ -5,7 +5,6 @@
 
 (se/reg-event
  :api.example/increment-count
- []
  (fn [_ _]
    {:via/reply {:body (swap! counter inc)
                 :status 200}}))

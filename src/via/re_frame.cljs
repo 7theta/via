@@ -80,9 +80,9 @@
            peer-id (or peer-id (via/first-peer endpoint))]
        (if on-success
          (via/send endpoint peer-id event
-                   :on-success (when on-success #(rf/dispatch (conj (vec on-success) (:payload %))))
-                   :on-failure (when on-failure #(rf/dispatch (conj (vec on-failure) (:payload %))))
-                   :on-timeout (when on-timeout #(rf/dispatch (conj (vec on-timeout) (:payload %))))
+                   :on-success (when on-success #(rf/dispatch (conj (vec on-success) (:body %))))
+                   :on-failure (when on-failure #(rf/dispatch (conj (vec on-failure) (:body %))))
+                   :on-timeout (when on-timeout #(rf/dispatch (conj (vec on-timeout) (:body %))))
                    :timeout (or timeout defaults/request-timeout))
          (via/send endpoint peer-id event))))))
 
