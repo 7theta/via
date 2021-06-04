@@ -98,14 +98,15 @@
                                                            :sn 0
                                                            :updated nil})))
                    remote-subscribe (fn []
-                                      (via/send endpoint peer-id
-                                                [:via.subs/subscribe
-                                                 {:query-v query-v
-                                                  :callback [:via.subs.signal/updated (sub-key peer-id query-v)]}]
-                                                :on-success (reply-handler :via.subs.subscribe/success)
-                                                :on-failure (reply-handler :via.subs.subscribe/failure)
-                                                :on-timeout (reply-handler :via.subs.subscribe/timeout)
-                                                :timeout defaults/request-timeout))]
+                                      (when (via/connected? endpoint peer-id)
+                                        (via/send endpoint peer-id
+                                                  [:via.subs/subscribe
+                                                   {:query-v query-v
+                                                    :callback [:via.subs.signal/updated (sub-key peer-id query-v)]}]
+                                                  :on-success (reply-handler :via.subs.subscribe/success)
+                                                  :on-failure (reply-handler :via.subs.subscribe/failure)
+                                                  :on-timeout (reply-handler :via.subs.subscribe/timeout)
+                                                  :timeout defaults/request-timeout)))]
                (remote-subscribe)
                (locking subscription-lock
                  (swap! outbound-subs assoc (sub-key peer-id query-v)
@@ -180,10 +181,11 @@
                                                           {:reply (first args)})
                                                         {:peer-id peer-id
                                                          :query-v query-v}))))]
-         (via/send endpoint peer-id
-                   [:via.subs/dispose {:query-v query-v}]
-                   :on-success (reply-handler :via.subs.dispose/success)
-                   :on-failure (reply-handler :via.subs.dispose/failure))
+         (when (via/connected? endpoint peer-id)
+           (via/send endpoint peer-id
+                     [:via.subs/dispose {:query-v query-v}]
+                     :on-success (reply-handler :via.subs.dispose/success)
+                     :on-failure (reply-handler :via.subs.dispose/failure)))
          (swap! outbound-subs dissoc (sub-key peer-id query-v))
          true))))))
 
@@ -203,15 +205,19 @@
              watch-key (str ":via-" query-v "(" peer-id ")")
              initial-value @signal
              #?@(:clj [wait-for-initial (promise)])
-             send-value! #(try (via/send endpoint peer-id
-                                         (conj (vec callback)
-                                               {:query-v query-v
-                                                :change %
-                                                :sn (swap! sequence-number inc)}))
+             send-value! #(try (when (via/connected? endpoint peer-id)
+                                 (via/send endpoint peer-id
+                                           (conj (vec callback)
+                                                 {:query-v query-v
+                                                  :change %
+                                                  :sn (swap! sequence-number inc)})))
                                true
                                (catch #?(:clj Exception :cljs js/Error) e
-                                 #?(:clj (log/error :via/send-value "->" peer-id e)
-                                    :cljs (js/console.error ":via/send-value" "->" peer-id "\n" e))
+                                 (via/handle-event endpoint
+                                                   :via.subs.send-value/failed
+                                                   {:peer-id peer-id
+                                                    :message %
+                                                    :error e})
                                  (dispose-inbound endpoint peer-id)
                                  false))]
          (swap! (::inbound-subs @(adapter/context (endpoint)))
