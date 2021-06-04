@@ -1,10 +1,12 @@
 (ns via.example.subs
-  (:require [signum.signal :as s]
+  (:require [via.telemetry :as telemetry]
+            [signum.signal :as s]
             [signum.subs :refer [reg-sub subscribe]]
+            [integrant.repl.state :refer [system]]
             [utilis.fn :refer [fsafe]]))
 
 (reg-sub
- :api.example/my-counter
+ :api.example/auto-increment-counter
  (fn [query-v]
    (let [counter (s/signal 0)
          counter-loop (future
@@ -14,41 +16,33 @@
                           (recur)))]
      {:counter counter
       :counter-loop counter-loop}))
- (fn [{:keys [counter-loop]} _query-v]
+ (fn [{:keys [counter-loop]} _]
    (future-cancel counter-loop))
- (fn [{:keys [counter]} _query-v]
+ (fn [{:keys [counter]} _]
    @counter))
 
 (reg-sub
- :api.example/auto-increment-count
- (fn [query-v]
-   (let [value @(subscribe [:api.example/my-counter])]
-     [value ((fsafe inc) value)])))
+ :api.example.auto-increment-counter/multiply
+ (fn [[_ factor]]
+   (* @(subscribe [:api.example/auto-increment-counter]) factor)))
 
 (reg-sub
- :api.example/auto-increment-string
- (fn [[_ some-text]]
-   (let [value @(subscribe [:api.example/my-counter])]
-     {:value value
-      :str (str some-text "-" value)})))
-
-(reg-sub
- :api.example/large-message
+ :api.example/metrics
  (fn [_]
-   (let [generate-large-value #(->> (partial rand-int 128)
-                                    (repeatedly)
-                                    (take (rand-int (* 1 1024 1024)))
-                                    (map char)
-                                    (apply str))
-         value (s/signal (generate-large-value))]
-     {:ft (future
-            (loop []
-              (Thread/sleep 10000)
-              (s/alter! value (constantly (generate-large-value)))
-              (recur)))
-      :value value}))
- (fn [{:keys [ft]} _]
-   (future-cancel ft))
- (fn [{:keys [value]} _]
-   {:correlation (rand-int 1000)
-    :string @value}))
+   (let [metrics (s/signal nil)
+         update-loop (future
+                       (loop []
+                         (s/alter! metrics #(try (-> system
+                                                     :via/endpoint
+                                                     telemetry/metrics)
+                                                 (catch Exception e
+                                                   (println e)
+                                                   %)))
+                         (Thread/sleep 1000)
+                         (recur)))]
+     {:metrics metrics
+      :update-loop update-loop}))
+ (fn [{:keys [update-loop]} _]
+   (future-cancel update-loop))
+ (fn [{:keys [metrics]} _]
+   @metrics))

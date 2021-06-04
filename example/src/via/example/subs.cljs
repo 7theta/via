@@ -2,6 +2,6 @@
   (:require [re-frame.core :refer [reg-sub]]))
 
 (reg-sub
- :via.example/count
+ :example/dispatch-reply
  (fn [db _]
-   (get db :counter 0)))
+   (:example/dispatch-reply db)))
