@@ -37,7 +37,7 @@
  (fn [_]
    (let [generate-large-value #(->> (partial rand-int 128)
                                     (repeatedly)
-                                    (take (rand-int (* 10 1024 1024)))
+                                    (take (rand-int (* 1 1024 1024)))
                                     (map char)
                                     (apply str))
          value (s/signal (generate-large-value))]

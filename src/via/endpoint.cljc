@@ -187,6 +187,10 @@
    (when (not reconnect)
      (cancel-reconnect-task endpoint peer-id))))
 
+(defn connected?
+  [endpoint peer-id]
+  (boolean (get-in @(adapter/peers (endpoint)) [peer-id :connection])))
+
 (defn first-peer
   [endpoint]
   (ffirst @(adapter/peers (endpoint))))

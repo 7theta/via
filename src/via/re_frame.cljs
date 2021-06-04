@@ -30,12 +30,11 @@
        query-id
        (fn [db query-v]
          (swap! subscriptions conj query-v)
-         (get-in db (path query-v)))))
-    (ra/make-reaction #(let [sub-value @(rf/subscribe query-v)]
-                         (cond
-                           (remote? query-v) sub-value
-                           (nil? sub-value) default
-                           :else sub-value)))))
+         (let [path (path query-v)]
+           (if (contains? (get-in db (drop-last path)) (last path))
+             (get-in db path)
+             default)))))
+    (ra/make-reaction (fn [] @(rf/subscribe query-v)))))
 
 (defn dispatch
   [endpoint peer-id event options]
