@@ -9,6 +9,11 @@
   [endpoint peer-id event {:keys [timeout]
                            :or {timeout defaults/request-timeout}
                            :as options}]
+  (when (or (not endpoint) (not peer-id))
+    (throw (ex-info "An endpoint and peer-id must be provided when dispatching an event"
+                    {:endpoint (boolean endpoint)
+                     :peer-id peer-id
+                     :event event})))
   (let [{:keys [promise] :as adapter} (p/adapter)
         chain-handlers (chain-handlers adapter options)]
     (via/send endpoint peer-id event

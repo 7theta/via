@@ -18,6 +18,8 @@
             [compojure.route :as route]
             [ring.middleware.defaults :as ring-defaults]
 
+            [tempus.core :as tempus]
+
             [utilis.timer :as timer]
 
             [clojure.test :as t]
@@ -113,6 +115,32 @@
                                          (:endpoint peer-2)
                                          (connect peer-2 peer-1)
                                          [event-id value])))
+                       (catch Exception e
+                         (locking lock
+                           (println e))
+                         false)
+                       (finally
+                         (shutdown peer-1)
+                         (shutdown peer-2))))))
+
+(defspec send-dates-directly-to-peer
+  20
+  (prop/for-all [value (gen/map gen/keyword gen/string)]
+                (let [value (assoc value :date-time (tempus/now))
+                      event-id (str (gensym) "/event")
+                      peer-1 (peer {:exports {:events #{event-id}}})
+                      peer-2 (peer)]
+                  (se/reg-event
+                   event-id
+                   (fn [_ [_ value :as event]]
+                     {:via/reply {:status 200
+                                  :body value}}))
+                  (try (let [result @(vc/dispatch
+                                      (:endpoint peer-2)
+                                      (connect peer-2 peer-1)
+                                      [event-id value])]
+                         (= (tempus/into :long (:date-time value))
+                            (tempus/into :long (:date-time (:body result)))))
                        (catch Exception e
                          (locking lock
                            (println e))

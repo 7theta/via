@@ -73,6 +73,11 @@
 (defn subscribe
   ([endpoint peer-id query] (subscribe endpoint peer-id query nil))
   ([endpoint peer-id [query-id & _ :as query] default]
+   (when (or (not endpoint) (not peer-id))
+     (throw (ex-info "An endpoint and peer-id must be provided when subscribing to a sub"
+                     {:endpoint (boolean endpoint)
+                      :peer-id peer-id
+                      :query query})))
    (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-outbound/timer)]
         :cljs [identity])
     (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
