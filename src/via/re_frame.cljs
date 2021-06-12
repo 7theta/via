@@ -134,7 +134,7 @@
 (defn subscriptions
   [endpoint peer-id]
   (let [context (va/context (endpoint))]
-    (or (::subscriptions @context)
+    (or (get-in @context [peer-id ::subscriptions])
         (let [subscriptions (atom #{})
               remote-subscriptions (atom {})]
           (add-watch rfs/query->reaction :via.re-frame/subscription-cache
@@ -145,7 +145,7 @@
                                     (map first)
                                     (filter @subscriptions)
                                     set))))
-          (swap! context assoc ::subscriptions subscriptions)
+          (swap! context assoc-in [peer-id ::subscriptions] subscriptions)
           (add-watch subscriptions ::subscriptions
                      (fn [_key _ref old-value new-value]
                        (let [[removed added _] (diff old-value new-value)]

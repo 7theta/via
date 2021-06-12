@@ -203,7 +203,7 @@
                     :reconnecting}
                   :status
                   second))
-       (ffirst)))
+       ffirst))
 
 (defn first-endpoint
   []
