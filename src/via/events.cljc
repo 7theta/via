@@ -9,13 +9,20 @@
   [endpoint peer-id event {:keys [timeout]
                            :or {timeout defaults/request-timeout}
                            :as options}]
+  (when (or (not endpoint) (not peer-id))
+    (via/handle-event endpoint
+                      :via.events/no-peer-provided
+                      {:endpoint (boolean endpoint)
+                       :peer-id peer-id
+                       :event event}))
   (let [{:keys [promise] :as adapter} (p/adapter)
         chain-handlers (chain-handlers adapter options)]
-    (via/send endpoint peer-id event
-              :on-success (chain-handlers :on-success)
-              :on-failure (chain-handlers :on-failure)
-              :on-timeout (chain-handlers :on-timeout)
-              :timeout timeout)
+    (when (and endpoint peer-id)
+      (via/send endpoint peer-id event
+                :on-success (chain-handlers :on-success)
+                :on-failure (chain-handlers :on-failure)
+                :on-timeout (chain-handlers :on-timeout)
+                :timeout timeout))
     promise))
 
 ;;; Implementation

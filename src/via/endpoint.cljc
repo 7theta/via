@@ -182,7 +182,11 @@
   ([endpoint peer-id]
    (disconnect endpoint peer-id false))
   ([endpoint peer-id reconnect]
-   (swap! (adapter/peers (endpoint)) assoc-in [peer-id :reconnect] reconnect)
+   (swap! (adapter/peers (endpoint)) update peer-id
+          merge {:reconnect reconnect
+                 :status (if reconnect
+                           :reconnecting
+                           :disconnecting)})
    (adapter/disconnect (endpoint) peer-id)
    (when (not reconnect)
      (cancel-reconnect-task endpoint peer-id))))
@@ -193,7 +197,17 @@
 
 (defn first-peer
   [endpoint]
-  (ffirst @(adapter/peers (endpoint))))
+  (->> @(adapter/peers (endpoint))
+       (filter (comp #{:connecting
+                    :connected
+                    :reconnecting}
+                  :status
+                  second))
+       ffirst))
+
+(defn first-endpoint
+  []
+  (first @endpoints))
 
 (defn add-event-listener
   [endpoint key listener]
@@ -326,10 +340,12 @@
    (let [peer {:id peer-id
                :role :originator
                :request {:peer-id peer-id
-                         :peer-address peer-address}}]
+                         :peer-address peer-address}
+               :status :connecting}]
      (swap! (adapter/peers (endpoint)) assoc (:id peer) peer)
      #?(:clj (if-let [connection (adapter/connect (endpoint) peer-address)]
-               (do ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
+               (do ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection
+                                                                              :status :connected}))
                    (heartbeat endpoint peer-id)
                    peer-id)
                (do (swap! (adapter/peers (endpoint)) dissoc (:id peer))
@@ -337,7 +353,8 @@
         :cljs (-> (endpoint)
                   (adapter/connect peer-address)
                   (j/call :then (fn [connection]
-                                  ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection}))
+                                  ((adapter/handle-connect (endpoint)) endpoint (merge peer {:connection connection
+                                                                                             :status :connected}))
                                   (heartbeat endpoint peer-id)
                                   peer-id))
                   (j/call :catch (fn [error]
@@ -478,7 +495,8 @@
   (when-let [request-id (-> message :headers :request-id)]
     (send-reply endpoint peer-id
                 request-id {:status 400
-                            :body {:error :via.endpoint/unknown-event}})))
+                            :body {:error :via.endpoint/unknown-event
+                                   :event (:body message)}})))
 
 (defn- handle-remote-event
   [endpoint request {:keys [body] :as message}]
@@ -514,7 +532,8 @@
                             #?@(:clj [:active-timer (-> (endpoint)
                                                         (adapter/static-metric :via.endpoint.peer.connection-duration/timer)
                                                         (timers/start))])
-                            :connected-timestamo (t/now)))]
+                            :connected-timestamp (t/now)
+                            :status :connected))]
     #?(:clj (histograms/update!
              (adapter/static-metric (endpoint) :via.endpoint.active-peers/histogram)
              (count peers)))
@@ -544,6 +563,7 @@
   ([endpoint peer-address peer-id]
    (reconnect endpoint peer-address peer-id 50))
   ([endpoint peer-address peer-id interval]
+   (swap! (adapter/peers (endpoint)) assoc-in [peer-id :status] :reconnecting)
    (let [on-connect-failed (fn []
                              (swap! (adapter/peers (endpoint))
                                     assoc-in [peer-id :reconnect-task]

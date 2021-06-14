@@ -7,7 +7,7 @@
 ;;   the terms of this license.
 ;;   You must not remove this notice, or any others, from this software.
 
-(defproject com.7theta/via "8.1.2"
+(defproject com.7theta/via "8.2.0"
   :description "A re-frame library for WebSocket based messaging"
   :url "https://github.com/7theta/via"
   :license {:name "MIT License"
@@ -31,7 +31,7 @@
 
                  [com.7theta/distantia "0.2.2"]
                  [com.7theta/signum "4.1.0"]
-                 [com.7theta/tempus "0.3.1"]
+                 [com.7theta/tempus "0.3.2"]
                  [com.7theta/utilis "1.12.2"]
 
                  [integrant "0.8.0"]]

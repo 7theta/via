@@ -17,11 +17,6 @@
   ([endpoint peer-id query]
    (subscribe endpoint peer-id query nil))
   ([endpoint peer-id query default]
-   (when (or (not endpoint) (not peer-id))
-     (throw (ex-info "An endpoint and peer-id must be provided when subscribing to a sub"
-                     {:endpoint (boolean endpoint)
-                      :peer-id peer-id
-                      :query query})))
    #?(:cljs (rf/subscribe endpoint peer-id query default)
       :clj (vs/subscribe endpoint peer-id query default ))))
 
@@ -36,10 +31,5 @@
   ([endpoint peer-id event]
    (dispatch endpoint peer-id event nil))
   ([endpoint peer-id event options]
-   (when (or (not endpoint) (not peer-id))
-     (throw (ex-info "An endpoint and peer-id must be provided when dispatching an event"
-                     {:endpoint (boolean endpoint)
-                      :peer-id peer-id
-                      :event event})))
    #?(:cljs (rf/dispatch endpoint peer-id event options)
       :clj (ve/dispatch endpoint peer-id event options))))

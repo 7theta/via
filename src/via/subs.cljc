@@ -73,6 +73,11 @@
 (defn subscribe
   ([endpoint peer-id query] (subscribe endpoint peer-id query nil))
   ([endpoint peer-id [query-id & _ :as query] default]
+   (when (or (not endpoint) (not peer-id))
+     (via/handle-event endpoint :via.subs/no-peer-provided
+                       {:endpoint (boolean endpoint)
+                        :peer-id peer-id
+                        :query query}))
    (#?@(:clj [timers/time! (adapter/static-metric (endpoint) :via.endpoint.peer.subscribe-outbound/timer)]
         :cljs [identity])
     (let [outbound-subs (::outbound-subs @(adapter/context (endpoint)))
@@ -98,7 +103,7 @@
                                                            :sn 0
                                                            :updated nil})))
                    remote-subscribe (fn []
-                                      (when (via/connected? endpoint peer-id)
+                                      (when (and endpoint peer-id (via/connected? endpoint peer-id))
                                         (via/send endpoint peer-id
                                                   [:via.subs/subscribe
                                                    {:query-v query-v
