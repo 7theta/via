@@ -56,13 +56,15 @@
              heartbeat-timeout
              heartbeat-enabled
              heartbeat-fail-threshold
+             request-timeout
              context]
       :or {adapter #?(:clj aleph/websocket-adapter
                       :cljs haslett/websocket-adapter)
            heartbeat-interval defaults/heartbeat-interval
            heartbeat-fail-threshold 1
            heartbeat-timeout defaults/request-timeout
-           heartbeat-enabled true}}]
+           heartbeat-enabled true
+           request-timeout defaults/request-timeout}}]
   (try (let [{:keys [events subs namespaces]} exports
              #?@(:clj [metrics (metrics)] :cljs [metrics {}])
              endpoint (adapter (merge
@@ -87,7 +89,8 @@
                                  :heartbeat-interval heartbeat-interval
                                  :heartbeat-enabled heartbeat-enabled
                                  :heartbeat-fail-threshold heartbeat-fail-threshold
-                                 :heartbeat-timeout heartbeat-timeout}
+                                 :heartbeat-timeout heartbeat-timeout
+                                 :request-timeout request-timeout}
                                 adapter-options))]
          (swap! endpoints conj endpoint)
          (doseq [peer-address peers]
@@ -248,7 +251,7 @@
                    :on-success #(handle-event endpoint :via.endpoint.session-context.update/on-success (assoc event-handler-args :reply %))
                    :on-failure #(handle-event endpoint :via.endpoint.session-context.update/on-failure (assoc event-handler-args :reply %))
                    :on-timeout #(handle-event endpoint :via.endpoint.session-context.update/on-timeout event-handler-args)
-                   :timeout defaults/request-timeout))))))))
+                   :timeout (adapter/opt (endpoint) :request-timeout)))))))))
 
 (defn merge-context
   [endpoint context]

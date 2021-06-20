@@ -10,6 +10,7 @@
 (ns via.re-frame
   (:require [via.endpoint :as via]
             [via.defaults :as defaults]
+            [via.adapter :as adapter]
             [via.subs :as vs]
             [via.events :as ve]
             [via.adapter :as va]
@@ -23,14 +24,14 @@
 
 (defn subscribe
   [endpoint peer-id [query-id & _ :as query-v] default]
-  (let [subscriptions (subscriptions endpoint peer-id)
-        remote? (fn [query-v] (get @subscriptions query-v))]
+  (let [subscriptions (subscriptions endpoint peer-id)]
+    (swap! (va/context (endpoint)) assoc-in [::defaults query-v] default)
     (when-not (re-frame.registrar/get-handler :sub query-id)
       (rf/reg-sub
        query-id
        (fn [db query-v]
-         (swap! subscriptions conj query-v)
          (let [path (path query-v)]
+           (swap! subscriptions conj query-v)
            (if (contains? (get-in db (drop-last path)) (last path))
              (get-in db path)
              default)))))
@@ -82,7 +83,7 @@
                    :on-success (when on-success #(rf/dispatch (conj (vec on-success) (:body %))))
                    :on-failure (when on-failure #(rf/dispatch (conj (vec on-failure) (:body %))))
                    :on-timeout (when on-timeout #(rf/dispatch (conj (vec on-timeout) (:body %))))
-                   :timeout (or timeout defaults/request-timeout))
+                   :timeout (or timeout (adapter/opt (endpoint) :request-timeout)))
          (via/send endpoint peer-id event))))))
 
 ;;; Event Handlers
@@ -115,9 +116,16 @@
  (fn [{:keys [db]} [_ query-v value]]
    {:db (assoc-in db (path query-v) value)}))
 
+(rf/reg-event-fx
+ :via.re-frame.sub.value/removed
+ (fn [{:keys [db]} [_ query-v]]
+   (let [path (path query-v)]
+     {:db (update-in db (drop-last path) dissoc (last path))})))
+
 (defn remote-subscribe
   [endpoint peer-id remote-subscriptions query-v]
-  (let [sub (vs/subscribe endpoint peer-id query-v)]
+  (let [default (get-in @(va/context (endpoint)) [::defaults query-v])
+        sub (vs/subscribe endpoint peer-id query-v default)]
     (add-watch sub ::remote-subscribe
                (fn [_ _ _ value]
                  (rf/dispatch [:via.re-frame.sub.value/updated query-v value])))
@@ -127,9 +135,11 @@
 (defn remote-dispose
   [endpoint peer-id remote-subscriptions query-v]
   (when-let [sub (get @remote-subscriptions query-v)]
+    (rf/dispatch [:via.re-frame.sub.value/removed query-v])
     (remove-watch sub ::remote-subscribe)
     (swap! remote-subscriptions dissoc query-v)
-    (vs/dispose endpoint peer-id query-v)))
+    (vs/dispose endpoint peer-id query-v)
+    (swap! (va/context (endpoint)) update ::defaults dissoc query-v)))
 
 (defn subscriptions
   [endpoint peer-id]
@@ -137,6 +147,7 @@
     (or (get-in @context [peer-id ::subscriptions])
         (let [subscriptions (atom #{})
               remote-subscriptions (atom {})]
+          (swap! context assoc-in [peer-id ::subscriptions] subscriptions)
           (add-watch rfs/query->reaction :via.re-frame/subscription-cache
                      (fn [_key _ref old-value new-value]
                        (reset! subscriptions
@@ -145,7 +156,6 @@
                                     (map first)
                                     (filter @subscriptions)
                                     set))))
-          (swap! context assoc-in [peer-id ::subscriptions] subscriptions)
           (add-watch subscriptions ::subscriptions
                      (fn [_key _ref old-value new-value]
                        (let [[removed added _] (diff old-value new-value)]
