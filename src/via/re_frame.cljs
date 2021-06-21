@@ -25,7 +25,6 @@
 (defn subscribe
   [endpoint peer-id [query-id & _ :as query-v] default]
   (let [subscriptions (subscriptions endpoint peer-id)]
-    (swap! (va/context (endpoint)) assoc-in [::defaults query-v] default)
     (when-not (re-frame.registrar/get-handler :sub query-id)
       (rf/reg-sub
        query-id
@@ -124,8 +123,7 @@
 
 (defn remote-subscribe
   [endpoint peer-id remote-subscriptions query-v]
-  (let [default (get-in @(va/context (endpoint)) [::defaults query-v])
-        sub (vs/subscribe endpoint peer-id query-v default)]
+  (let [sub (vs/subscribe endpoint peer-id query-v)]
     (add-watch sub ::remote-subscribe
                (fn [_ _ _ value]
                  (rf/dispatch [:via.re-frame.sub.value/updated query-v value])))
@@ -138,8 +136,7 @@
     (rf/dispatch [:via.re-frame.sub.value/removed query-v])
     (remove-watch sub ::remote-subscribe)
     (swap! remote-subscriptions dissoc query-v)
-    (vs/dispose endpoint peer-id query-v)
-    (swap! (va/context (endpoint)) update ::defaults dissoc query-v)))
+    (vs/dispose endpoint peer-id query-v)))
 
 (defn subscriptions
   [endpoint peer-id]
