@@ -111,7 +111,7 @@
                                                   :on-success (reply-handler :via.subs.subscribe/success)
                                                   :on-failure (reply-handler :via.subs.subscribe/failure)
                                                   :on-timeout (reply-handler :via.subs.subscribe/timeout)
-                                                  :timeout defaults/request-timeout)))]
+                                                  :timeout (adapter/opt (endpoint) :request-timeout))))]
                (remote-subscribe)
                (locking subscription-lock
                  (swap! outbound-subs assoc (sub-key peer-id query-v)
@@ -192,6 +192,9 @@
                      :on-success (reply-handler :via.subs.dispose/success)
                      :on-failure (reply-handler :via.subs.dispose/failure)))
          (swap! outbound-subs dissoc (sub-key peer-id query-v))
+         (via/handle-event endpoint :via.subs.outbound/disposed
+                           {:peer-id peer-id
+                            :query-v query-v})
          true))))))
 
 (defn- subscribe-inbound
