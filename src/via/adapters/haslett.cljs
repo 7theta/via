@@ -64,7 +64,8 @@
 
 (defn- disconnect*
   [endpoint peer-id]
-  (ws/close (get-in @(adapter/peers endpoint) [peer-id :connection])))
+  (when-let [connection (get-in @(adapter/peers endpoint) [peer-id :connection])]
+    (ws/close connection)))
 
 (defn- handle-connection
   [endpoint [_ {:keys [connection request]}]]

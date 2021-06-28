@@ -181,22 +181,23 @@
   (doseq [[peer-id _] @(adapter/peers (endpoint))]
     (send endpoint peer-id message)))
 
+(defn connected?
+  [endpoint peer-id]
+  (boolean (get-in @(adapter/peers (endpoint)) [peer-id :connection])))
+
 (defn disconnect
   ([endpoint peer-id]
    (disconnect endpoint peer-id false))
   ([endpoint peer-id reconnect]
-   (swap! (adapter/peers (endpoint)) update peer-id
-          merge {:reconnect reconnect
-                 :status (if reconnect
-                           :reconnecting
-                           :disconnecting)})
-   (adapter/disconnect (endpoint) peer-id)
-   (when (not reconnect)
-     (cancel-reconnect-task endpoint peer-id))))
-
-(defn connected?
-  [endpoint peer-id]
-  (boolean (get-in @(adapter/peers (endpoint)) [peer-id :connection])))
+   (when (connected? endpoint peer-id)
+     (swap! (adapter/peers (endpoint)) update peer-id
+            merge {:reconnect reconnect
+                   :status (if reconnect
+                             :reconnecting
+                             :disconnecting)})
+     (adapter/disconnect (endpoint) peer-id)
+     (when (not reconnect)
+       (cancel-reconnect-task endpoint peer-id)))))
 
 (defn first-peer
   [endpoint]
@@ -309,8 +310,7 @@
                                                   peers)))
                                  failure-count (get-in peers [peer-id :heartbeat-failure-count])]
                              (if (>= failure-count heartbeat-fail-threshold)
-                               (do #?(:clj (log/debug ":via.endpoint/heartbeat failed. Reconnecting to peer." {:peer-id peer-id})
-                                      :cljs (js/console.debug ":via.endpoint/heartbeat failed. Reconnecting to peer." #js {:peer-id peer-id}))
+                               (do (handle-event endpoint :via.endpoint/heartbeat-failed {:peer-id peer-id})
                                    (disconnect endpoint peer-id true))
                                (@send-heartbeat))))
           handle-success (fn []
@@ -328,11 +328,12 @@
                                         (timer/run-after
                                          (fn []
                                            (reset! sent-timestamp (t/now))
-                                           (send endpoint peer-id [:via.endpoint/heartbeat]
-                                                 :timeout heartbeat-timeout
-                                                 :on-success handle-success
-                                                 :on-failure (partial handle-failure :failure)
-                                                 :on-timeout (partial handle-failure :timeout)))
+                                           (when (connected? endpoint peer-id)
+                                             (send endpoint peer-id [:via.endpoint/heartbeat]
+                                                   :timeout heartbeat-timeout
+                                                   :on-success handle-success
+                                                   :on-failure (partial handle-failure :failure)
+                                                   :on-timeout (partial handle-failure :timeout))))
                                          heartbeat-interval)))))
       (@send-heartbeat))))
 
